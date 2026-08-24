@@ -4,13 +4,18 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { GetCommand } from '@aws-sdk/lib-dynamodb';
 import { s3Client, RAW_BUCKET } from '../lib/s3';
 import { dynamoDB, TABLE_NAME } from '../lib/dynamodb';
-import { ok, badRequest, notFound, internalError } from '../lib/response';
+import { ok, badRequest, unauthorized, notFound, internalError } from '../lib/response';
+import { extractBearerToken, verifyToken } from '../lib/auth';
 import { DownloadPhotoResponse } from '@metro/shared';
 
 const EXPIRES_IN = 900;
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
+    const token = extractBearerToken(event.headers?.Authorization ?? event.headers?.authorization);
+    if (!token) return unauthorized('Login required to download');
+    await verifyToken(token);
+
     const photoId = event.pathParameters?.photoId;
     if (!photoId) return badRequest('photoId is required');
 

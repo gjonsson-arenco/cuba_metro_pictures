@@ -72,7 +72,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function getToken(): Promise<string | null> {
-    if (LOCAL_MODE) return LOCAL_TOKEN;
+    if (LOCAL_MODE) {
+      return localStorage.getItem(LOCAL_USER_KEY) ? LOCAL_TOKEN : null;
+    }
     try {
       const session = await fetchAuthSession();
       return session.tokens?.accessToken?.toString() ?? null;

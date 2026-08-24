@@ -17,7 +17,7 @@ interface LightboxProps {
   hasPrev: boolean;
   hasNext: boolean;
   isAdmin: boolean;
-  onDownload: (photoId: string) => Promise<void> | void;
+  onDownload?: (photoId: string) => Promise<void> | void;
   onRotate?: (photoId: string, direction: 'cw' | 'ccw') => Promise<void> | void;
   onDelete?: (photoId: string) => Promise<void> | void;
   onMetadata?: (photoId: string, updates: { tags?: string[]; sailingClass?: SailingClass | null; day?: RegattaDay | null }) => Promise<void> | void;
@@ -149,46 +149,50 @@ export default function Lightbox({
         </div>
 
         {/* Action bar */}
-        <div className="flex flex-wrap items-center justify-center gap-2 bg-black/50 rounded-full px-3 py-2">
-          <ActionButton
-            label="Descargar"
-            icon="⬇"
-            disabled={busy !== null}
-            loading={busy === 'download'}
-            onClick={() => runAction('download', () => onDownload(photo.photoId))}
-          />
-          {isAdmin && onRotate && (
-            <>
+        {(onDownload || (isAdmin && (onRotate || onDelete))) && (
+          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/50 rounded-full px-3 py-2">
+            {onDownload && (
               <ActionButton
-                label="Rotar ↺"
-                icon="↺"
+                label="Descargar"
+                icon="⬇"
                 disabled={busy !== null}
-                loading={busy === 'rotate-ccw'}
-                onClick={() => runAction('rotate-ccw', () => onRotate(photo.photoId, 'ccw'))}
+                loading={busy === 'download'}
+                onClick={() => runAction('download', () => onDownload(photo.photoId))}
               />
+            )}
+            {isAdmin && onRotate && (
+              <>
+                <ActionButton
+                  label="Rotar ↺"
+                  icon="↺"
+                  disabled={busy !== null}
+                  loading={busy === 'rotate-ccw'}
+                  onClick={() => runAction('rotate-ccw', () => onRotate(photo.photoId, 'ccw'))}
+                />
+                <ActionButton
+                  label="Rotar ↻"
+                  icon="↻"
+                  disabled={busy !== null}
+                  loading={busy === 'rotate-cw'}
+                  onClick={() => runAction('rotate-cw', () => onRotate(photo.photoId, 'cw'))}
+                />
+              </>
+            )}
+            {isAdmin && onDelete && (
               <ActionButton
-                label="Rotar ↻"
-                icon="↻"
+                label="Eliminar"
+                icon="🗑"
+                danger
                 disabled={busy !== null}
-                loading={busy === 'rotate-cw'}
-                onClick={() => runAction('rotate-cw', () => onRotate(photo.photoId, 'cw'))}
+                loading={busy === 'delete'}
+                onClick={() => {
+                  if (!window.confirm('¿Eliminar esta foto?')) return;
+                  return runAction('delete', () => onDelete(photo.photoId));
+                }}
               />
-            </>
-          )}
-          {isAdmin && onDelete && (
-            <ActionButton
-              label="Eliminar"
-              icon="🗑"
-              danger
-              disabled={busy !== null}
-              loading={busy === 'delete'}
-              onClick={() => {
-                if (!window.confirm('¿Eliminar esta foto?')) return;
-                return runAction('delete', () => onDelete(photo.photoId));
-              }}
-            />
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
         {/* Admin metadata editor */}
         {isAdmin && onMetadata && (

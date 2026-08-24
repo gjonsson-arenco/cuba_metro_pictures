@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Photo,
   SailingClass,
@@ -71,7 +72,8 @@ function FilterGroup({
 }
 
 export default function GalleryPage() {
-  const { isAdmin, getToken } = useAuth();
+  const { isAdmin, user, getToken } = useAuth();
+  const isLoggedIn = !!user;
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -425,7 +427,7 @@ export default function GalleryPage() {
           hasPrev={lightboxIndex !== null && lightboxIndex > 0}
           hasNext={lightboxIndex !== null && lightboxIndex < photos.length - 1}
           isAdmin={isAdmin}
-          onDownload={handleSingleDownload}
+          onDownload={isLoggedIn ? handleSingleDownload : undefined}
           onRotate={isAdmin ? handleRotate : undefined}
           onDelete={isAdmin ? handleDelete : undefined}
           onMetadata={isAdmin ? handleMetadata : undefined}
@@ -444,15 +446,24 @@ export default function GalleryPage() {
           >
             Limpiar
           </button>
-          <button
-            onClick={handleDownloadSelected}
-            disabled={downloadProgress !== null}
-            className="bg-white hover:bg-cuba-cream text-cuba-navy text-sm font-semibold px-4 py-2 rounded-full disabled:opacity-60 shadow-md"
-          >
-            {downloadProgress
-              ? `Descargando ${downloadProgress.done}/${downloadProgress.total}…`
-              : selectedIds.size === 1 ? 'Descargar' : 'Descargar zip'}
-          </button>
+          {isLoggedIn ? (
+            <button
+              onClick={handleDownloadSelected}
+              disabled={downloadProgress !== null}
+              className="bg-white hover:bg-cuba-cream text-cuba-navy text-sm font-semibold px-4 py-2 rounded-full disabled:opacity-60 shadow-md"
+            >
+              {downloadProgress
+                ? `Descargando ${downloadProgress.done}/${downloadProgress.total}…`
+                : selectedIds.size === 1 ? 'Descargar' : 'Descargar zip'}
+            </button>
+          ) : (
+            <Link
+              to="/login"
+              className="bg-white hover:bg-cuba-cream text-cuba-navy text-sm font-semibold px-4 py-2 rounded-full shadow-md"
+            >
+              Ingresá para descargar
+            </Link>
+          )}
         </div>
       )}
     </main>
