@@ -1,0 +1,396 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Metro Photos - Serverless Photo Gallery for Campeonato Metropolitano
+
+Globals:
+  Function:
+    Runtime: nodejs18.x
+    Architectures: [x86_64]
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        DYNAMODB_TABLE: !Ref PhotosTable
+        S3_RAW_BUCKET: !Ref RawBucket
+        S3_PROCESSED_BUCKET: !Ref ProcessedBucket
+        CLOUDFRONT_URL: !Sub "https://${CloudFrontDistribution.DomainName}"
+        COGNITO_USER_POOL_ID: !Ref UserPool
+        COGNITO_CLIENT_ID: !Ref UserPoolClient
+        AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization'"
+      AllowOrigin: "'*'"
+
+Parameters:
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+  AdminEmail:
+    Type: String
+    Description: Email for the initial admin user
+
+Resources:
+  # ============================================================
+  # DynamoDB Table
+  # ============================================================
+  PhotosTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "metro-photos-${Environment}"
+      BillingMode: PAY_PER_REQUEST
+      TableClass: STANDARD
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      AttributeDefinitions:
+        - AttributeName: photoId
+          AttributeType: S
+        - AttributeName: entityType
+          AttributeType: S
+        - AttributeName: uploadedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: photoId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: byUploadDate-index
+          KeySchema:
+            - AttributeName: entityType
+              KeyType: HASH
+            - AttributeName: uploadedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  # ============================================================
+  # S3 Buckets
+  # ============================================================
+  RawBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: MoveToGlacierAfter30Days
+            Status: Enabled
+            Transitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 30
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ProcessedBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "metro-photos-processed-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "metro-photos-frontend-${Environment}-${AWS::AccountId}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                "AWS:SourceArn": !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  ProcessedBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProcessedBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${ProcessedBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                "AWS:SourceArn": !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+
+  # ============================================================
+  # CloudFront
+  # ============================================================
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "metro-photos-oac-${Environment}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "Metro Photos CDN (${Environment})"
+        DefaultRootObject: index.html
+        Origins:
+          - Id: FrontendOrigin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+          - Id: ProcessedImagesOrigin
+            DomainName: !GetAtt ProcessedBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendOrigin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6  # CachingOptimized
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+        CacheBehaviors:
+          - PathPattern: '/thumbnails/*'
+            TargetOriginId: ProcessedImagesOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+          - PathPattern: '/medium/*'
+            TargetOriginId: ProcessedImagesOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+            AllowedMethods: [GET, HEAD]
+            CachedMethods: [GET, HEAD]
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        PriceClass: PriceClass_100
+
+  # ============================================================
+  # Cognito
+  # ============================================================
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "metro-photos-users-${Environment}"
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: true
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientName: !Sub "metro-photos-app-${Environment}"
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      AccessTokenValidity: 15
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: minutes
+        RefreshToken: days
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: admin
+      UserPoolId: !Ref UserPool
+      Description: Admin users with upload permissions
+
+  # ============================================================
+  # Lambda Functions
+  # ============================================================
+  ListPhotosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-list-${Environment}"
+      Handler: dist/functions/listPhotos.handler
+      CodeUri: ../../packages/backend/
+      Description: List photos with optional tag filtering
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /photos
+            Method: GET
+
+  UploadPhotosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-upload-${Environment}"
+      Handler: dist/functions/uploadPhotos.handler
+      CodeUri: ../../packages/backend/
+      Description: Generate presigned URLs for direct S3 upload
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref RawBucket
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /upload/presigned
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  TagPhotosFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-tag-${Environment}"
+      Handler: dist/functions/tagPhotos.handler
+      CodeUri: ../../packages/backend/
+      Description: Apply tags to uploaded photos
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /photos/tag
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  DeletePhotoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-delete-${Environment}"
+      Handler: dist/functions/deletePhoto.handler
+      CodeUri: ../../packages/backend/
+      Description: Soft delete a photo
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            Path: /photos/{photoId}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ProcessPhotoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-process-${Environment}"
+      Handler: dist/functions/processPhoto.handler
+      CodeUri: ../../packages/backend/
+      Description: Auto-process photos on S3 upload (resize)
+      MemorySize: 1024
+      Timeout: 120
+      Layers:
+        - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:layer:sharp-layer:1"
+      Policies:
+        - S3ReadPolicy:
+            BucketName: !Ref RawBucket
+        - S3WritePolicy:
+            BucketName: !Ref ProcessedBucket
+        - DynamoDBWritePolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        S3Event:
+          Type: S3
+          Properties:
+            Bucket: !Ref RawBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: prefix
+                    Value: originals/
+
+  # ============================================================
+  # API Gateway with Cognito Authorizer
+  # ============================================================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience:
+                - !Ref UserPoolClient
+        DefaultAuthorizer: NONE
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiUrl"
+
+  CloudFrontUrl:
+    Description: CloudFront distribution URL
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontUrl"
+
+  UserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolId"
+
+  UserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "${AWS::StackName}-UserPoolClientId"
+
+  FrontendBucketName:
+    Description: S3 bucket for frontend
+    Value: !Ref FrontendBucket
+
+  PhotosTableName:
+    Description: DynamoDB table name
+    Value: !Ref PhotosTable
