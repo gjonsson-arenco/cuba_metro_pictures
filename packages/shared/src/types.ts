@@ -116,7 +116,8 @@ export interface AuthUser {
 export const ADMIN_GROUP = 'admin';
 export const MAX_TAGS_PER_PHOTO = 10;
 export const MAX_TAG_LENGTH = 50;
-export const MAX_FILE_SIZE_MB = 10;
+/** 0 disables the client/shared size check. */
+export const MAX_FILE_SIZE_MB = 0;
 export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 // Sailing metadata

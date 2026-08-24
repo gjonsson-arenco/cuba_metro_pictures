@@ -10,6 +10,7 @@ export function validateMimeType(mimeType: string): boolean {
 }
 
 export function validateFileSize(sizeBytes: number): boolean {
+  if (!MAX_FILE_SIZE_MB || MAX_FILE_SIZE_MB <= 0) return true;
   return sizeBytes <= MAX_FILE_SIZE_MB * 1024 * 1024;
 }
 

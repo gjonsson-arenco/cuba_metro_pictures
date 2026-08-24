@@ -18,7 +18,7 @@ describe('shared utils in frontend context', () => {
     expect(normalizeTag('  VELA  ')).toBe('vela');
   });
 
-  it('max file size is 10MB', () => {
-    expect(MAX_FILE_SIZE_MB).toBe(10);
+  it('has no file size cap by default', () => {
+    expect(MAX_FILE_SIZE_MB).toBe(0);
   });
 });

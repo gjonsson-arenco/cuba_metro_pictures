@@ -1,5 +1,5 @@
 import { useRef, useState, DragEvent, ChangeEvent } from 'react';
-import { MAX_FILE_SIZE_MB, ALLOWED_MIME_TYPES } from '@metro/shared';
+import { ALLOWED_MIME_TYPES } from '@metro/shared';
 
 interface UploadFile {
   file: File;
@@ -26,7 +26,6 @@ export default function UploadZone({ onFilesReady, isUploading }: UploadZoneProp
     const valid: UploadFile[] = [];
     for (const file of rawFiles) {
       if (!ALLOWED_MIME_TYPES.includes(file.type)) continue;
-      if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) continue;
       const preview = URL.createObjectURL(file);
       valid.push({ file, preview, progress: 0, status: 'pending' });
     }
@@ -70,7 +69,7 @@ export default function UploadZone({ onFilesReady, isUploading }: UploadZoneProp
           Arrastrá fotos aquí o hacé click para seleccionar
         </p>
         <p className="text-sm text-gray-500 mt-1">
-          JPG, PNG, WebP — máx. {MAX_FILE_SIZE_MB}MB por foto — hasta 100 fotos
+          JPG, PNG, WebP — sin límite de tamaño — hasta 100 fotos
         </p>
         <input
           ref={inputRef}
