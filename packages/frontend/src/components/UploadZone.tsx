@@ -62,7 +62,7 @@ export default function UploadZone({ onFilesReady, isUploading }: UploadZoneProp
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
         className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-colors ${
-          isDragging ? 'border-cuba-blue bg-blue-50' : 'border-gray-300 hover:border-cuba-blue hover:bg-gray-50'
+          isDragging ? 'border-cuba-navy bg-cuba-navy/5' : 'border-cuba-navy/25 hover:border-cuba-navy hover:bg-cuba-cream'
         }`}
       >
         <div className="text-5xl mb-3">📷</div>

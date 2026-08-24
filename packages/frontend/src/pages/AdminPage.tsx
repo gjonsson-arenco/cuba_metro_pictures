@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { setTokenProvider, getPresignedUrls, uploadToS3, tagPhotos, listPhotos } from '../lib/api';
+import { setTokenProvider, getPresignedUrls, uploadToS3, tagPhotos, listPhotos, triggerLocalProcess } from '../lib/api';
 import UploadZone, { UploadFile } from '../components/UploadZone';
 import TaggingForm from '../components/TaggingForm';
 
@@ -49,6 +49,7 @@ export default function AdminPage() {
               files[i].progress = pct;
               setFiles(prev => [...prev]);
             });
+            await triggerLocalProcess(upload.photoId, files[i].file.name);
             files[i].status = 'done';
             files[i].photoId = upload.photoId;
             photoIds.push(upload.photoId);
@@ -74,15 +75,15 @@ export default function AdminPage() {
     }
   }
 
-  async function handleTagging(tags: string[]) {
+  async function handleTagging(payload: { tags: string[]; sailingClass?: import('@metro/shared').SailingClass; day?: import('@metro/shared').RegattaDay }) {
     if (uploadedPhotoIds.length === 0) return;
     setIsTagging(true);
     try {
-      const result = await tagPhotos(uploadedPhotoIds, tags);
-      setSuccessMessage(`✅ ${result.updatedCount} fotos etiquetadas exitosamente`);
+      const result = await tagPhotos(uploadedPhotoIds, payload);
+      setSuccessMessage(`✅ ${result.updatedCount} fotos actualizadas exitosamente`);
       setStep('done');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Error al guardar etiquetas';
+      const msg = err instanceof Error ? err.message : 'Error al guardar metadata';
       setErrorMessage(msg);
     } finally {
       setIsTagging(false);
@@ -103,9 +104,9 @@ export default function AdminPage() {
 
   return (
     <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Panel de Administración</h1>
-        <p className="text-gray-600">Subí y etiquetá fotos del campeonato</p>
+      <div className="mb-8">
+        <h1 className="section-title">Panel de Administración</h1>
+        <p className="section-subtitle">Subí y etiquetá fotos del campeonato</p>
       </div>
 
       {/* Step indicator */}
@@ -113,7 +114,7 @@ export default function AdminPage() {
         {['upload', 'tagging', 'done'].map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-              step === s ? 'bg-cuba-blue text-white' :
+              step === s ? 'bg-cuba-navy text-white' :
               (['upload', 'tagging', 'done'].indexOf(step) > i) ? 'bg-green-500 text-white' :
               'bg-gray-200 text-gray-600'
             }`}>
@@ -127,9 +128,8 @@ export default function AdminPage() {
         ))}
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-        {step === 'upload' && (
-          <div className="space-y-6">
+      <div className="card p-6">
+        {step === 'upload' && (          <div className="space-y-6">
             <UploadZone onFilesReady={setFiles} isUploading={isUploading} />
             {errorMessage && (
               <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">

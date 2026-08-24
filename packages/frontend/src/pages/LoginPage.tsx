@@ -31,35 +31,35 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+    <main className="min-h-[calc(100vh-5rem)] flex items-center justify-center px-4 py-12">
       <div className="max-w-md w-full">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
+        <div className="card p-8">
           <div className="text-center mb-8">
-            <div className="text-5xl mb-3">⛵</div>
-            <h1 className="text-2xl font-bold text-gray-900">Panel de Administración</h1>
-            <p className="text-gray-500 mt-1">Campeonato Metropolitano</p>
+            <img src="/metro-logo.svg" alt="Metropolitano CUBA 2026" className="mx-auto h-24 w-auto text-cuba-navy" />
+            <h1 className="section-title mt-4">Panel de Administración</h1>
+            <p className="section-subtitle text-sm">Campeonato Metropolitano — CUBA 2026</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Usuario</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-cuba-navy/70 mb-1.5">Usuario</label>
               <input
                 type="text"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cuba-blue focus:border-cuba-blue"
+                className="w-full border border-cuba-navy/15 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-cuba-navy focus:border-cuba-navy"
                 placeholder="tu@email.com"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-1">Contraseña</label>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-cuba-navy/70 mb-1.5">Contraseña</label>
               <input
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cuba-blue focus:border-cuba-blue"
+                className="w-full border border-cuba-navy/15 rounded-lg px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-cuba-navy focus:border-cuba-navy"
                 placeholder="••••••••"
               />
             </div>

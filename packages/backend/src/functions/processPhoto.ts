@@ -42,7 +42,8 @@ export const handler = async (event: S3Event): Promise<void> => {
           chunks.push(Buffer.from(chunk));
         }
         const originalBuffer = Buffer.concat(chunks);
-        const image = sharpLib(originalBuffer);
+        // .rotate() with no args applies EXIF orientation and strips the tag so downstream renders match.
+        const image = sharpLib(originalBuffer).rotate();
         const metadata = await image.metadata();
 
         // Generate thumbnail
@@ -91,6 +92,7 @@ export const handler = async (event: S3Event): Promise<void> => {
             uploadedBy: 'system',
             uploadedAt: new Date().toISOString(),
             isDeleted: false,
+            rotation: 0,
             metadata: {
               width: metadata.width,
               height: metadata.height,

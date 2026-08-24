@@ -3,11 +3,17 @@ import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { dynamoDB, TABLE_NAME } from '../lib/dynamodb';
 import { ok, badRequest, unauthorized, internalError } from '../lib/response';
 import { extractBearerToken, verifyToken, isAdmin } from '../lib/auth';
-import { TagPhotosRequest, TagPhotosResponse, validateTags, normalizeTag } from '@metro/shared';
+import {
+  TagPhotosRequest,
+  TagPhotosResponse,
+  validateTags,
+  normalizeTag,
+  isSailingClass,
+  isRegattaDay
+} from '@metro/shared';
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
-    // Auth
     const token = extractBearerToken(event.headers?.Authorization ?? event.headers?.authorization);
     if (!token) return unauthorized();
     const user = await verifyToken(token);
@@ -21,31 +27,70 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
       return badRequest('Invalid JSON body');
     }
 
-    const { photoIds, tags } = body;
+    const { photoIds, tags, sailingClass, day } = body;
     if (!Array.isArray(photoIds) || photoIds.length === 0) {
       return badRequest('photoIds must be a non-empty array');
     }
-    if (!Array.isArray(tags)) {
-      return badRequest('tags must be an array');
+
+    let normalizedTags: string[] | undefined;
+    if (Array.isArray(tags)) {
+      normalizedTags = tags.map(normalizeTag).filter(Boolean);
+      const validation = validateTags(normalizedTags);
+      if (!validation.valid) return badRequest(validation.error ?? 'Invalid tags');
     }
 
-    const normalizedTags = tags.map(normalizeTag).filter(Boolean);
-    const validation = validateTags(normalizedTags);
-    if (!validation.valid) {
-      return badRequest(validation.error ?? 'Invalid tags');
+    if (sailingClass !== undefined && sailingClass !== null && !isSailingClass(sailingClass)) {
+      return badRequest('Invalid sailingClass');
     }
+    if (day !== undefined && day !== null && !isRegattaDay(day)) {
+      return badRequest('Invalid day');
+    }
+
+    const setParts: string[] = ['updatedAt = :updatedAt', 'updatedBy = :updatedBy'];
+    const removeParts: string[] = [];
+    const values: Record<string, unknown> = {
+      ':updatedAt': new Date().toISOString(),
+      ':updatedBy': user.userId
+    };
+    const names: Record<string, string> = {};
+
+    if (normalizedTags !== undefined) {
+      setParts.push('tags = :tags');
+      values[':tags'] = normalizedTags;
+    }
+    if (sailingClass !== undefined) {
+      if (sailingClass === null) {
+        removeParts.push('sailingClass');
+      } else {
+        setParts.push('sailingClass = :cls');
+        values[':cls'] = sailingClass;
+      }
+    }
+    if (day !== undefined) {
+      names['#d'] = 'day';
+      if (day === null) {
+        removeParts.push('#d');
+      } else {
+        setParts.push('#d = :day');
+        values[':day'] = day;
+      }
+    }
+
+    if (setParts.length === 2 && removeParts.length === 0) {
+      return badRequest('Nothing to update');
+    }
+
+    let updateExpression = `SET ${setParts.join(', ')}`;
+    if (removeParts.length) updateExpression += ` REMOVE ${removeParts.join(', ')}`;
 
     const results = await Promise.allSettled(
       photoIds.map(photoId =>
         dynamoDB.send(new UpdateCommand({
           TableName: TABLE_NAME,
           Key: { photoId },
-          UpdateExpression: 'SET tags = :tags, updatedAt = :updatedAt, updatedBy = :updatedBy',
-          ExpressionAttributeValues: {
-            ':tags': normalizedTags,
-            ':updatedAt': new Date().toISOString(),
-            ':updatedBy': user.userId
-          }
+          UpdateExpression: updateExpression,
+          ExpressionAttributeValues: values,
+          ExpressionAttributeNames: Object.keys(names).length ? names : undefined
         }))
       )
     );

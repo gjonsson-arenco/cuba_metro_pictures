@@ -3,21 +3,25 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['"Playfair Display"', 'Georgia', 'serif']
+      },
       colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a'
-        },
+        // CUBA institutional palette (Club Universitario de Buenos Aires)
         cuba: {
-          blue: '#003087',
-          red: '#c8102e',
-          gold: '#ffd700'
+          navy: '#0A2A66',       // primary
+          'navy-dark': '#061F4D', // hover
+          'navy-light': '#1E4A94',
+          gold: '#C8A24D',       // nautical brass
+          'gold-dark': '#a4832d',
+          red: '#B01B2E',        // regatta accent
+          cream: '#F5EFE0',      // subtle bg
+          sand: '#EEE6D3'
         }
+      },
+      boxShadow: {
+        card: '0 1px 3px rgba(10,42,102,0.08), 0 8px 24px -8px rgba(10,42,102,0.12)'
       }
     }
   },

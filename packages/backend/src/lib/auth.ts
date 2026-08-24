@@ -3,6 +3,7 @@ import { AuthUser, ADMIN_GROUP } from '@metro/shared';
 
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID ?? '';
 const CLIENT_ID = process.env.COGNITO_CLIENT_ID ?? '';
+const LOCAL_AUTH_BYPASS = process.env.LOCAL_AUTH_BYPASS === '1';
 
 let verifier: ReturnType<typeof CognitoJwtVerifier.create> | null = null;
 
@@ -18,6 +19,10 @@ function getVerifier() {
 }
 
 export async function verifyToken(token: string): Promise<AuthUser> {
+  if (LOCAL_AUTH_BYPASS) {
+    // Dev-only shortcut: any non-empty token is treated as admin for local testing.
+    return { userId: 'local-admin', email: 'admin@local', groups: [ADMIN_GROUP] };
+  }
   const payload = await getVerifier().verify(token);
   const groups: string[] = (payload['cognito:groups'] as string[]) ?? [];
   return {

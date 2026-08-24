@@ -1,9 +1,19 @@
 import { useState, KeyboardEvent } from 'react';
-import { MAX_TAGS_PER_PHOTO, validateTag, normalizeTag } from '@metro/shared';
+import {
+  MAX_TAGS_PER_PHOTO,
+  validateTag,
+  normalizeTag,
+  SAILING_CLASSES,
+  SAILING_CLASS_LABELS,
+  REGATTA_DAYS,
+  REGATTA_DAY_LABELS,
+  SailingClass,
+  RegattaDay
+} from '@metro/shared';
 
 interface TaggingFormProps {
   existingTags: string[];
-  onSubmit: (tags: string[]) => void;
+  onSubmit: (payload: { tags: string[]; sailingClass?: SailingClass; day?: RegattaDay }) => void;
   isSubmitting: boolean;
 }
 
@@ -11,6 +21,8 @@ export default function TaggingForm({ existingTags, onSubmit, isSubmitting }: Ta
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [sailingClass, setSailingClass] = useState<SailingClass | ''>('');
+  const [day, setDay] = useState<RegattaDay | ''>('');
 
   function handleInput(val: string) {
     setInputValue(val);
@@ -45,13 +57,80 @@ export default function TaggingForm({ existingTags, onSubmit, isSubmitting }: Ta
     }
   }
 
+  function handleSubmit() {
+    onSubmit({
+      tags: selectedTags,
+      sailingClass: sailingClass || undefined,
+      day: day || undefined
+    });
+  }
+
+  const hasSomething = selectedTags.length > 0 || !!sailingClass || !!day;
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Class + Day */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-cuba-navy/70 mb-2">
+            Clase (opcional)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {SAILING_CLASSES.map(cls => (
+              <button
+                key={cls}
+                type="button"
+                onClick={() => setSailingClass(prev => (prev === cls ? '' : cls))}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-sm font-medium transition-colors ${
+                  sailingClass === cls
+                    ? 'bg-cuba-navy text-white border-cuba-navy'
+                    : 'bg-white text-cuba-navy border-cuba-navy/20 hover:bg-cuba-cream'
+                }`}
+              >
+                <img
+                  src={`/classes/${cls}.svg`}
+                  alt=""
+                  aria-hidden
+                  className="h-4 w-auto"
+                  style={sailingClass === cls
+                    ? { filter: 'brightness(0) invert(1)' }
+                    : { filter: 'brightness(0)' }}
+                />
+                {SAILING_CLASS_LABELS[cls]}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-cuba-navy/70 mb-2">
+            Día (opcional)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {REGATTA_DAYS.map(d => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setDay(prev => (prev === d ? '' : d))}
+                className={`px-3 py-1.5 rounded-full border text-sm font-medium transition-colors ${
+                  day === d
+                    ? 'bg-cuba-navy text-white border-cuba-navy'
+                    : 'bg-white text-cuba-navy border-cuba-navy/20 hover:bg-cuba-cream'
+                }`}
+              >
+                {REGATTA_DAY_LABELS[d]}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Tags */}
       <div>
-        <label className="block text-sm font-semibold text-gray-700 mb-2">
-          Etiquetas (máx. {MAX_TAGS_PER_PHOTO})
+        <label className="block text-xs font-semibold uppercase tracking-wider text-cuba-navy/70 mb-2">
+          Etiquetas libres (máx. {MAX_TAGS_PER_PHOTO})
         </label>
-        <div className="border rounded-lg p-2 flex flex-wrap gap-2 min-h-[48px] bg-white focus-within:ring-2 focus-within:ring-cuba-blue focus-within:border-cuba-blue">
+        <div className="border border-cuba-navy/15 rounded-lg p-2 flex flex-wrap gap-2 min-h-[48px] bg-white focus-within:ring-2 focus-within:ring-cuba-navy focus-within:border-cuba-navy">
           {selectedTags.map(tag => (
             <span key={tag} className="tag-chip tag-chip-active gap-1">
               {tag}
@@ -74,7 +153,7 @@ export default function TaggingForm({ existingTags, onSubmit, isSubmitting }: Ta
               <button
                 key={s}
                 onClick={() => addTag(s)}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 transition-colors"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-cuba-cream transition-colors"
               >
                 {s}
               </button>
@@ -84,11 +163,11 @@ export default function TaggingForm({ existingTags, onSubmit, isSubmitting }: Ta
       </div>
 
       <button
-        onClick={() => onSubmit(selectedTags)}
-        disabled={isSubmitting || selectedTags.length === 0}
+        onClick={handleSubmit}
+        disabled={isSubmitting || !hasSomething}
         className="btn-primary w-full"
       >
-        {isSubmitting ? 'Guardando...' : `Aplicar ${selectedTags.length} etiqueta(s) a todas las fotos`}
+        {isSubmitting ? 'Guardando...' : 'Aplicar a todas las fotos'}
       </button>
     </div>
   );
