@@ -1,4 +1,4 @@
-import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_MB, MAX_TAG_LENGTH, MAX_TAGS_PER_PHOTO } from './types';
+import { ALLOWED_MIME_TYPES, MAX_FILE_SIZE_MB, MAX_TAG_LENGTH, MAX_TAGS_PER_PHOTO, PASSWORD_MIN_LENGTH } from './types';
 
 export function validateFilename(filename: string): boolean {
   const ext = filename.split('.').pop()?.toLowerCase();
@@ -49,4 +49,23 @@ export function getThumbS3Key(photoId: string): string {
 
 export function getMediumS3Key(photoId: string): string {
   return `medium/${photoId}_medium.jpg`;
+}
+
+/** Loose RFC-5322 check; Cognito does the authoritative validation. */
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+}
+
+/**
+ * Mirrors the Cognito pool policy: 8+ chars with an uppercase, a lowercase and
+ * a digit. Symbols are allowed but not required.
+ */
+export function validatePassword(password: string): { valid: boolean; error?: string } {
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    return { valid: false, error: `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres` };
+  }
+  if (!/[A-Z]/.test(password)) return { valid: false, error: 'Falta una letra mayúscula' };
+  if (!/[a-z]/.test(password)) return { valid: false, error: 'Falta una letra minúscula' };
+  if (!/[0-9]/.test(password)) return { valid: false, error: 'Falta un número' };
+  return { valid: true };
 }

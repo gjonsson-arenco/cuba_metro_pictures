@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
+import { USER_ROLE_LABELS } from '@metro/shared';
 
 export default function Header() {
-  const { user, isAdmin, logout } = useAuth();
+  const { user, role, canManagePhotos, canManageUsers, logout } = useAuth();
 
   return (
     <header className="bg-cuba-navy text-white shadow-md sticky top-0 z-30">
@@ -27,19 +28,34 @@ export default function Header() {
             >
               Galería
             </Link>
-            {isAdmin && (
+            {canManagePhotos && (
               <Link
                 to="/admin"
                 className="px-3 py-1.5 rounded-md text-sm font-semibold text-white/85 hover:text-white hover:bg-white/10 transition-colors"
               >
-                Admin
+                Fotos
+              </Link>
+            )}
+            {canManageUsers && (
+              <Link
+                to="/admin/users"
+                className="px-3 py-1.5 rounded-md text-sm font-semibold text-white/85 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                Usuarios
               </Link>
             )}
             {user ? (
               <div className="flex items-center gap-3 pl-3 ml-1 border-l border-white/15">
-                <span className="hidden sm:inline text-xs uppercase tracking-wider text-white/70">
-                  {user.username}
-                </span>
+                <Link
+                  to="/cambiar-password"
+                  title="Cambiar contraseña"
+                  className="hidden sm:flex flex-col items-end leading-tight hover:opacity-80 transition-opacity"
+                >
+                  <span className="text-xs tracking-wide text-white/70 normal-case">{user.email}</span>
+                  <span className="text-[10px] uppercase tracking-[0.2em] text-white/45">
+                    {USER_ROLE_LABELS[role]}
+                  </span>
+                </Link>
                 <button
                   onClick={() => logout()}
                   className="text-sm bg-white text-cuba-navy px-3 py-1.5 rounded-md font-semibold hover:bg-cuba-cream transition-colors"

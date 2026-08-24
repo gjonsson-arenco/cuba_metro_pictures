@@ -4,24 +4,23 @@ Description: Metro Photos - Serverless Photo Gallery for Campeonato Metropolitan
 
 Globals:
   Function:
-    Runtime: nodejs18.x
+    Runtime: nodejs24.x
     Architectures: [x86_64]
     Timeout: 30
     MemorySize: 512
     Environment:
       Variables:
         DYNAMODB_TABLE: !Ref PhotosTable
-        S3_RAW_BUCKET: !Ref RawBucket
+        S3_RAW_BUCKET: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
         S3_PROCESSED_BUCKET: !Ref ProcessedBucket
         CLOUDFRONT_URL: !Sub "https://${CloudFrontDistribution.DomainName}"
+        ALLOWED_ORIGIN: !Sub "https://${CloudFrontDistribution.DomainName}"
         COGNITO_USER_POOL_ID: !Ref UserPool
         COGNITO_CLIENT_ID: !Ref UserPoolClient
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
-  Api:
-    Cors:
-      AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
-      AllowHeaders: "'Content-Type,Authorization'"
-      AllowOrigin: "'*'"
+  # NOTE: no `Api:` block here on purpose. `Globals.Api.Cors` only applies to
+  # AWS::Serverless::Api (REST). This stack uses AWS::Serverless::HttpApi, whose
+  # CORS lives in the HttpApi resource below.
 
 Parameters:
   Environment:
@@ -31,6 +30,9 @@ Parameters:
   AdminEmail:
     Type: String
     Description: Email for the initial admin user
+  SharpLayerArn:
+    Type: String
+    Description: Full ARN (including version) of the Sharp Lambda layer
 
 Resources:
   # ============================================================
@@ -67,6 +69,10 @@ Resources:
   # ============================================================
   # S3 Buckets
   # ============================================================
+  # NOTE: everything else refers to this bucket by its literal name, never by
+  # !Ref RawBucket. ProcessPhotoFunction has an S3 event on it, so SAM puts a
+  # NotificationConfiguration on the bucket pointing at the function -- and a
+  # !Ref back from the function (or its role) closes a circular dependency.
   RawBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -75,11 +81,16 @@ Resources:
         Status: Enabled
       LifecycleConfiguration:
         Rules:
-          - Id: MoveToGlacierAfter30Days
+          # GLACIER_IR (not GLACIER): downloadPhoto presigns a GetObject against
+          # this bucket, and plain GLACIER would fail with InvalidObjectState.
+          - Id: MoveToGlacierIRAfter90Days
             Status: Enabled
             Transitions:
-              - StorageClass: GLACIER
-                TransitionInDays: 30
+              - StorageClass: GLACIER_IR
+                TransitionInDays: 90
+          - Id: ExpireOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
       CorsConfiguration:
         CorsRules:
           - AllowedHeaders: ['*']
@@ -207,15 +218,24 @@ Resources:
     Type: AWS::Cognito::UserPool
     Properties:
       UserPoolName: !Sub "metro-photos-users-${Environment}"
+      # Invite-only. Without this, Cognito's default lets anyone self-register
+      # through the public SignUp API using the client id baked into the SPA
+      # bundle -- and since downloadPhoto only requires being logged in, that
+      # would hand every original away.
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
       AutoVerifiedAttributes: [email]
       UsernameAttributes: [email]
       Policies:
         PasswordPolicy:
+          # MinimumLength must match PASSWORD_MIN_LENGTH in shared/src/types.ts
           MinimumLength: 8
           RequireUppercase: true
           RequireLowercase: true
           RequireNumbers: true
           RequireSymbols: false
+          # Generated credentials are one-use; give the person a month to redeem it.
+          TemporaryPasswordValidityDays: 30
 
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
@@ -223,9 +243,11 @@ Resources:
       UserPoolId: !Ref UserPool
       ClientName: !Sub "metro-photos-app-${Environment}"
       ExplicitAuthFlows:
+        # ALLOW_USER_SRP_AUTH is required: Amplify v6 signIn() uses SRP by default.
+        - ALLOW_USER_SRP_AUTH
         - ALLOW_USER_PASSWORD_AUTH
         - ALLOW_REFRESH_TOKEN_AUTH
-      AccessTokenValidity: 15
+      AccessTokenValidity: 60
       RefreshTokenValidity: 30
       TokenValidityUnits:
         AccessToken: minutes
@@ -236,17 +258,50 @@ Resources:
     Properties:
       GroupName: admin
       UserPoolId: !Ref UserPool
-      Description: Admin users with upload permissions
+      Description: Full access, including user management
+
+  EditorGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: editor
+      UserPoolId: !Ref UserPool
+      Description: Full photo management, no user management
+
+  # ============================================================
+  # API Gateway with Cognito Authorizer
+  # ============================================================
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref Environment
+      CorsConfiguration:
+        AllowOrigins:
+          - !Sub "https://${CloudFrontDistribution.DomainName}"
+        AllowHeaders: [Content-Type, Authorization]
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+        MaxAge: 600
+      Auth:
+        Authorizers:
+          CognitoAuthorizer:
+            IdentitySource: "$request.header.Authorization"
+            JwtConfiguration:
+              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+              audience:
+                - !Ref UserPoolClient
 
   # ============================================================
   # Lambda Functions
+  #
+  # All functions are bundled with esbuild: `npm install` cannot resolve the
+  # pnpm `workspace:*` dependency on @metro/shared, so esbuild inlines it.
+  # `sharp` stays external and is provided by the layer.
   # ============================================================
   ListPhotosFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "metro-photos-list-${Environment}"
-      Handler: dist/functions/listPhotos.handler
-      CodeUri: ../../packages/backend/
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/listPhotos/
       Description: List photos with optional tag filtering
       Policies:
         - DynamoDBReadPolicy:
@@ -255,6 +310,7 @@ Resources:
         Api:
           Type: HttpApi
           Properties:
+            ApiId: !Ref HttpApi
             Path: /photos
             Method: GET
 
@@ -262,16 +318,17 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "metro-photos-upload-${Environment}"
-      Handler: dist/functions/uploadPhotos.handler
-      CodeUri: ../../packages/backend/
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/uploadPhotos/
       Description: Generate presigned URLs for direct S3 upload
       Policies:
         - S3WritePolicy:
-            BucketName: !Ref RawBucket
+            BucketName: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
       Events:
         Api:
           Type: HttpApi
           Properties:
+            ApiId: !Ref HttpApi
             Path: /upload/presigned
             Method: POST
             Auth:
@@ -281,8 +338,8 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "metro-photos-tag-${Environment}"
-      Handler: dist/functions/tagPhotos.handler
-      CodeUri: ../../packages/backend/
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/tagPhotos/
       Description: Apply tags to uploaded photos
       Policies:
         - DynamoDBWritePolicy:
@@ -291,6 +348,7 @@ Resources:
         Api:
           Type: HttpApi
           Properties:
+            ApiId: !Ref HttpApi
             Path: /photos/tag
             Method: PUT
             Auth:
@@ -300,18 +358,90 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "metro-photos-delete-${Environment}"
-      Handler: dist/functions/deletePhoto.handler
-      CodeUri: ../../packages/backend/
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/deletePhoto/
       Description: Soft delete a photo
       Policies:
-        - DynamoDBWritePolicy:
+        # Crud, not Write: the handler reads the item with GetCommand first.
+        - DynamoDBCrudPolicy:
             TableName: !Ref PhotosTable
       Events:
         Api:
           Type: HttpApi
           Properties:
+            ApiId: !Ref HttpApi
             Path: /photos/{photoId}
             Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  DownloadPhotoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-download-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/downloadPhoto/
+      Description: Presigned GET of the original file (login required)
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref PhotosTable
+        - S3ReadPolicy:
+            BucketName: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /photos/{photoId}/download
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  UpdatePhotoMetadataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-metadata-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/updatePhotoMetadata/
+      Description: Edit tags / sailing class / regatta day of a photo
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /photos/{photoId}/metadata
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  RotatePhotoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-rotate-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/rotatePhoto/
+      Description: Rotate the original and regenerate thumb + medium
+      MemorySize: 1024
+      Timeout: 120
+      Layers:
+        - !Ref SharpLayerArn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PhotosTable
+        - S3CrudPolicy:
+            BucketName: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
+        - S3WritePolicy:
+            BucketName: !Ref ProcessedBucket
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /photos/{photoId}/rotate
+            Method: PUT
             Auth:
               Authorizer: CognitoAuthorizer
 
@@ -319,16 +449,16 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "metro-photos-process-${Environment}"
-      Handler: dist/functions/processPhoto.handler
-      CodeUri: ../../packages/backend/
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/processPhoto/
       Description: Auto-process photos on S3 upload (resize)
       MemorySize: 1024
       Timeout: 120
       Layers:
-        - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:layer:sharp-layer:1"
+        - !Ref SharpLayerArn
       Policies:
         - S3ReadPolicy:
-            BucketName: !Ref RawBucket
+            BucketName: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
         - S3WritePolicy:
             BucketName: !Ref ProcessedBucket
         - DynamoDBWritePolicy:
@@ -346,21 +476,133 @@ Resources:
                     Value: originals/
 
   # ============================================================
-  # API Gateway with Cognito Authorizer
+  # User management (ABM) - admin only, backed by Cognito
   # ============================================================
-  HttpApi:
-    Type: AWS::Serverless::HttpApi
+  ListUsersFunction:
+    Type: AWS::Serverless::Function
     Properties:
-      StageName: !Ref Environment
-      Auth:
-        Authorizers:
-          CognitoAuthorizer:
-            IdentitySource: "$request.header.Authorization"
-            JwtConfiguration:
-              issuer: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
-              audience:
-                - !Ref UserPoolClient
-        DefaultAuthorizer: NONE
+      FunctionName: !Sub "metro-photos-users-list-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/listUsers/
+      Description: List pool users with their role
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:ListUsers
+                - cognito-idp:ListUsersInGroup
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /users
+            Method: GET
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  CreateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-users-create-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/createUser/
+      Description: Create a user with a generated permanent password
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminCreateUser
+                - cognito-idp:AdminAddUserToGroup
+                - cognito-idp:AdminGetUser
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /users
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  UpdateUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-users-update-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/updateUser/
+      Description: Change a user role or enable/disable them
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminGetUser
+                - cognito-idp:AdminListGroupsForUser
+                - cognito-idp:AdminAddUserToGroup
+                - cognito-idp:AdminRemoveUserFromGroup
+                - cognito-idp:AdminEnableUser
+                - cognito-idp:AdminDisableUser
+                - cognito-idp:ListUsersInGroup
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /users/{username}
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  DeleteUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-users-delete-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/deleteUser/
+      Description: Delete a user
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminDeleteUser
+                - cognito-idp:AdminGetUser
+                - cognito-idp:ListUsersInGroup
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /users/{username}
+            Method: DELETE
+            Auth:
+              Authorizer: CognitoAuthorizer
+
+  ResetUserPasswordFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-users-reset-pw-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/resetUserPassword/
+      Description: Set a new generated password for a user
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - cognito-idp:AdminSetUserPassword
+              Resource: !GetAtt UserPool.Arn
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /users/{username}/reset-password
+            Method: POST
+            Auth:
+              Authorizer: CognitoAuthorizer
 
 Outputs:
   ApiUrl:
@@ -374,6 +616,12 @@ Outputs:
     Value: !Sub "https://${CloudFrontDistribution.DomainName}"
     Export:
       Name: !Sub "${AWS::StackName}-CloudFrontUrl"
+
+  CloudFrontDistributionId:
+    Description: CloudFront distribution ID (for cache invalidations)
+    Value: !Ref CloudFrontDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-CloudFrontDistributionId"
 
   UserPoolId:
     Description: Cognito User Pool ID

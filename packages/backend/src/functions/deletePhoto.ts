@@ -1,8 +1,8 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { dynamoDB, TABLE_NAME } from '../lib/dynamodb';
-import { ok, unauthorized, notFound, internalError } from '../lib/response';
-import { extractBearerToken, verifyToken, isAdmin } from '../lib/auth';
+import { ok, unauthorized, notFound, forbidden, internalError } from '../lib/response';
+import { extractBearerToken, verifyToken, canManagePhotos } from '../lib/auth';
 import { DeletePhotoResponse } from '@metro/shared';
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
@@ -10,7 +10,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const token = extractBearerToken(event.headers?.Authorization ?? event.headers?.authorization);
     if (!token) return unauthorized();
     const user = await verifyToken(token);
-    if (!isAdmin(user)) return unauthorized('Admin access required');
+    if (!canManagePhotos(user)) return forbidden('Se requiere rol admin o editor');
 
     const photoId = event.pathParameters?.photoId;
     if (!photoId) return notFound('photoId is required');

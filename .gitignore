@@ -10,6 +10,9 @@ dist/
 .env
 .env.local
 .env.*.local
+.env.production
+.prod-outputs.env
+*.bak
 !.env.example
 
 # OS files
@@ -36,3 +39,6 @@ pnpm-debug.log*
 
 # Misc
 *.tsbuildinfo
+
+# Lambda bundles (esbuild)
+.lambda/

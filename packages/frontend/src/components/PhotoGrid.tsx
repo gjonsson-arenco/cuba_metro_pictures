@@ -6,7 +6,8 @@ interface PhotoGridProps {
   onPhotoClick: (index: number) => void;
   selected: Set<string>;
   onToggleSelect: (photoId: string) => void;
-  isAdmin?: boolean;
+  /** Admin or editor: can rotate, delete and edit metadata. */
+  canEdit?: boolean;
   onRotate?: (photoId: string, direction: 'cw' | 'ccw') => Promise<void> | void;
   onDelete?: (photoId: string) => Promise<void> | void;
 }
@@ -18,7 +19,7 @@ export default function PhotoGrid({
   onPhotoClick,
   selected,
   onToggleSelect,
-  isAdmin = false,
+  canEdit = false,
   onRotate,
   onDelete
 }: PhotoGridProps) {
@@ -74,7 +75,7 @@ export default function PhotoGrid({
               {isSelected ? '✓' : '○'}
             </button>
 
-            {isAdmin && (onRotate || onDelete) && (
+            {canEdit && (onRotate || onDelete) && (
               <div className="absolute top-2 right-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 {onRotate && (
                   <>

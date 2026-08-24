@@ -1,5 +1,10 @@
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
-import { AuthUser, ADMIN_GROUP } from '@metro/shared';
+import {
+  AuthUser,
+  ADMIN_GROUP,
+  canManagePhotos as groupsCanManagePhotos,
+  canManageUsers as groupsCanManageUsers
+} from '@metro/shared';
 
 const USER_POOL_ID = process.env.COGNITO_USER_POOL_ID ?? '';
 const CLIENT_ID = process.env.COGNITO_CLIENT_ID ?? '';
@@ -30,6 +35,16 @@ export async function verifyToken(token: string): Promise<AuthUser> {
     email: (payload.email as string) ?? '',
     groups
   };
+}
+
+/** Upload, tag, edit, rotate and delete photos: admin or editor. */
+export function canManagePhotos(user: AuthUser): boolean {
+  return groupsCanManagePhotos(user.groups);
+}
+
+/** Create, edit and delete users: admin only. */
+export function canManageUsers(user: AuthUser): boolean {
+  return groupsCanManageUsers(user.groups);
 }
 
 export function isAdmin(user: AuthUser): boolean {

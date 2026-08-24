@@ -3,8 +3,8 @@ import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { s3Client, RAW_BUCKET, PROCESSED_BUCKET } from '../lib/s3';
 import { dynamoDB, TABLE_NAME } from '../lib/dynamodb';
-import { ok, badRequest, unauthorized, notFound, internalError } from '../lib/response';
-import { extractBearerToken, verifyToken, isAdmin } from '../lib/auth';
+import { ok, badRequest, unauthorized, notFound, forbidden, internalError } from '../lib/response';
+import { extractBearerToken, verifyToken, canManagePhotos } from '../lib/auth';
 import { RotatePhotoRequest, RotatePhotoResponse, getThumbS3Key, getMediumS3Key } from '@metro/shared';
 
 import type sharp from 'sharp';
@@ -19,7 +19,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const token = extractBearerToken(event.headers?.Authorization ?? event.headers?.authorization);
     if (!token) return unauthorized();
     const user = await verifyToken(token);
-    if (!isAdmin(user)) return unauthorized('Admin access required');
+    if (!canManagePhotos(user)) return forbidden('Se requiere rol admin o editor');
 
     const photoId = event.pathParameters?.photoId;
     if (!photoId) return badRequest('photoId is required');

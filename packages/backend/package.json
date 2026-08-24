@@ -4,14 +4,16 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "build:lambda": "node scripts/build-lambdas.mjs",
     "test": "jest",
     "lint": "tsc --noEmit",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist .lambda",
     "local:bootstrap": "tsx src/local/bootstrap.ts",
     "local:server": "tsx watch src/local/server.ts",
     "dev": "tsx watch src/local/server.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "^3.1116.0",
     "@aws-sdk/client-dynamodb": "^3.600.0",
     "@aws-sdk/client-s3": "^3.600.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
@@ -29,6 +31,7 @@
     "@types/sharp": "^0.32.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "esbuild": "^0.28.2",
     "express": "^4.19.2",
     "jest": "^29.7.0",
     "ts-jest": "^29.1.4",

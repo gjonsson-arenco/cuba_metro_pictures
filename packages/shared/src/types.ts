@@ -113,7 +113,101 @@ export interface AuthUser {
   groups: string[];
 }
 
+// ── Roles ─────────────────────────────────────────────────────────────────
+// A role maps to a Cognito group. `viewer` is the absence of any group: a
+// logged-in user with no group can browse and download, nothing else.
 export const ADMIN_GROUP = 'admin';
+export const EDITOR_GROUP = 'editor';
+
+export type UserRole = 'admin' | 'editor' | 'viewer';
+
+export const USER_ROLES: UserRole[] = ['admin', 'editor', 'viewer'];
+
+export const USER_ROLE_LABELS: Record<UserRole, string> = {
+  admin: 'Administrador',
+  editor: 'Editor',
+  viewer: 'Visitante'
+};
+
+export const USER_ROLE_DESCRIPTIONS: Record<UserRole, string> = {
+  admin: 'Gestiona fotos y usuarios',
+  editor: 'Gestiona fotos, no usuarios',
+  viewer: 'Sólo ver y descargar'
+};
+
+export function isUserRole(v: unknown): v is UserRole {
+  return typeof v === 'string' && (USER_ROLES as string[]).includes(v);
+}
+
+export function roleFromGroups(groups: string[]): UserRole {
+  if (groups.includes(ADMIN_GROUP)) return 'admin';
+  if (groups.includes(EDITOR_GROUP)) return 'editor';
+  return 'viewer';
+}
+
+/** The Cognito group backing a role, or null for `viewer` (no group). */
+export function groupForRole(role: UserRole): string | null {
+  if (role === 'admin') return ADMIN_GROUP;
+  if (role === 'editor') return EDITOR_GROUP;
+  return null;
+}
+
+/** Upload, tag, edit, rotate and delete photos. */
+export function canManagePhotos(groups: string[]): boolean {
+  return groups.includes(ADMIN_GROUP) || groups.includes(EDITOR_GROUP);
+}
+
+/** Create, edit and delete users. Admin only. */
+export function canManageUsers(groups: string[]): boolean {
+  return groups.includes(ADMIN_GROUP);
+}
+
+// ── User management (ABM) ─────────────────────────────────────────────────
+export interface ManagedUser {
+  username: string;
+  email: string;
+  role: UserRole;
+  enabled: boolean;
+  status: string;
+  createdAt: string;
+  lastModifiedAt: string;
+}
+
+export interface ListUsersResponse {
+  users: ManagedUser[];
+}
+
+export interface CreateUserRequest {
+  email: string;
+  role: UserRole;
+}
+
+export interface CreateUserResponse {
+  user: ManagedUser;
+  /** Shown once so the admin can pass it on. Never stored anywhere. */
+  temporaryPassword: string;
+}
+
+export interface UpdateUserRequest {
+  role?: UserRole;
+  enabled?: boolean;
+}
+
+export interface UpdateUserResponse {
+  user: ManagedUser;
+}
+
+export interface DeleteUserResponse {
+  success: boolean;
+}
+
+export interface ResetUserPasswordResponse {
+  username: string;
+  password: string;
+}
+
+/** Must match UserPool.Policies.PasswordPolicy.MinimumLength in the SAM template. */
+export const PASSWORD_MIN_LENGTH = 8;
 export const MAX_TAGS_PER_PHOTO = 10;
 export const MAX_TAG_LENGTH = 50;
 /** 0 disables the client/shared size check. */

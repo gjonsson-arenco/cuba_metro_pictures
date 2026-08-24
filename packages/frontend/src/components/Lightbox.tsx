@@ -16,7 +16,8 @@ interface LightboxProps {
   onNext: () => void;
   hasPrev: boolean;
   hasNext: boolean;
-  isAdmin: boolean;
+  /** Admin or editor: can rotate, delete and edit metadata. */
+  canEdit: boolean;
   onDownload?: (photoId: string) => Promise<void> | void;
   onRotate?: (photoId: string, direction: 'cw' | 'ccw') => Promise<void> | void;
   onDelete?: (photoId: string) => Promise<void> | void;
@@ -30,7 +31,7 @@ export default function Lightbox({
   onNext,
   hasPrev,
   hasNext,
-  isAdmin,
+  canEdit,
   onDownload,
   onRotate,
   onDelete,
@@ -132,7 +133,7 @@ export default function Lightbox({
           {photo.tags.map(tag => (
             <span key={tag} className="inline-flex items-center gap-1 bg-white/15 text-white text-xs px-2 py-1 rounded-full">
               {tag}
-              {isAdmin && onMetadata && (
+              {canEdit && onMetadata && (
                 <button
                   type="button"
                   disabled={busy !== null}
@@ -149,7 +150,7 @@ export default function Lightbox({
         </div>
 
         {/* Action bar */}
-        {(onDownload || (isAdmin && (onRotate || onDelete))) && (
+        {(onDownload || (canEdit && (onRotate || onDelete))) && (
           <div className="flex flex-wrap items-center justify-center gap-2 bg-black/50 rounded-full px-3 py-2">
             {onDownload && (
               <ActionButton
@@ -160,7 +161,7 @@ export default function Lightbox({
                 onClick={() => runAction('download', () => onDownload(photo.photoId))}
               />
             )}
-            {isAdmin && onRotate && (
+            {canEdit && onRotate && (
               <>
                 <ActionButton
                   label="Rotar ↺"
@@ -178,7 +179,7 @@ export default function Lightbox({
                 />
               </>
             )}
-            {isAdmin && onDelete && (
+            {canEdit && onDelete && (
               <ActionButton
                 label="Eliminar"
                 icon="🗑"
@@ -195,7 +196,7 @@ export default function Lightbox({
         )}
 
         {/* Admin metadata editor */}
-        {isAdmin && onMetadata && (
+        {canEdit && onMetadata && (
           <div className="flex flex-col gap-2 bg-black/60 backdrop-blur rounded-2xl px-4 py-3 max-w-2xl">
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] uppercase tracking-wider text-white/60 w-14">Clase</span>

@@ -72,7 +72,7 @@ function FilterGroup({
 }
 
 export default function GalleryPage() {
-  const { isAdmin, user, getToken } = useAuth();
+  const { canManagePhotos, user, getToken } = useAuth();
   const isLoggedIn = !!user;
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
@@ -405,9 +405,9 @@ export default function GalleryPage() {
         onPhotoClick={setLightboxIndex}
         selected={selectedIds}
         onToggleSelect={toggleSelect}
-        isAdmin={isAdmin}
-        onRotate={isAdmin ? handleRotate : undefined}
-        onDelete={isAdmin ? handleDelete : undefined}
+        canEdit={canManagePhotos}
+        onRotate={canManagePhotos ? handleRotate : undefined}
+        onDelete={canManagePhotos ? handleDelete : undefined}
       />
 
       <div ref={sentinelRef} className="h-8" />
@@ -426,11 +426,11 @@ export default function GalleryPage() {
           onNext={() => setLightboxIndex(i => (i !== null && i < photos.length - 1 ? i + 1 : i))}
           hasPrev={lightboxIndex !== null && lightboxIndex > 0}
           hasNext={lightboxIndex !== null && lightboxIndex < photos.length - 1}
-          isAdmin={isAdmin}
+          canEdit={canManagePhotos}
           onDownload={isLoggedIn ? handleSingleDownload : undefined}
-          onRotate={isAdmin ? handleRotate : undefined}
-          onDelete={isAdmin ? handleDelete : undefined}
-          onMetadata={isAdmin ? handleMetadata : undefined}
+          onRotate={canManagePhotos ? handleRotate : undefined}
+          onDelete={canManagePhotos ? handleDelete : undefined}
+          onMetadata={canManagePhotos ? handleMetadata : undefined}
         />
       )}
 

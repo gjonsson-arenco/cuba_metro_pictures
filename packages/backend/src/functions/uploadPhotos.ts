@@ -2,8 +2,8 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { s3Client, RAW_BUCKET } from '../lib/s3';
-import { ok, badRequest, unauthorized, internalError } from '../lib/response';
-import { extractBearerToken, verifyToken, isAdmin } from '../lib/auth';
+import { ok, badRequest, unauthorized, forbidden, internalError } from '../lib/response';
+import { extractBearerToken, verifyToken, canManagePhotos } from '../lib/auth';
 import {
   PresignedUploadRequest,
   PresignedUploadResponse,
@@ -22,7 +22,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     if (!token) return unauthorized();
 
     const user = await verifyToken(token);
-    if (!isAdmin(user)) return unauthorized('Admin access required');
+    if (!canManagePhotos(user)) return forbidden('Se requiere rol admin o editor');
 
     // Parse body
     if (!event.body) return badRequest('Missing request body');

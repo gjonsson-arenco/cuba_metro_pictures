@@ -1,8 +1,8 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { dynamoDB, TABLE_NAME } from '../lib/dynamodb';
-import { ok, badRequest, unauthorized, internalError } from '../lib/response';
-import { extractBearerToken, verifyToken, isAdmin } from '../lib/auth';
+import { ok, badRequest, unauthorized, forbidden, internalError } from '../lib/response';
+import { extractBearerToken, verifyToken, canManagePhotos } from '../lib/auth';
 import {
   TagPhotosRequest,
   TagPhotosResponse,
@@ -17,7 +17,7 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     const token = extractBearerToken(event.headers?.Authorization ?? event.headers?.authorization);
     if (!token) return unauthorized();
     const user = await verifyToken(token);
-    if (!isAdmin(user)) return unauthorized('Admin access required');
+    if (!canManagePhotos(user)) return forbidden('Se requiere rol admin o editor');
 
     if (!event.body) return badRequest('Missing request body');
     let body: TagPhotosRequest;

@@ -11,7 +11,14 @@ import {
   UpdatePhotoMetadataResponse,
   Photo,
   SailingClass,
-  RegattaDay
+  RegattaDay,
+  ListUsersResponse,
+  CreateUserRequest,
+  CreateUserResponse,
+  UpdateUserRequest,
+  UpdateUserResponse,
+  DeleteUserResponse,
+  ResetUserPasswordResponse
 } from '@metro/shared';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
@@ -163,6 +170,35 @@ export async function triggerLocalProcess(photoId: string, filename: string): Pr
   } catch (err) {
     console.warn('Local processing trigger failed for', photoId, err);
   }
+}
+
+// ── User management (admin only) ──────────────────────────────────────────
+
+export async function listUsers(): Promise<ListUsersResponse> {
+  const { data } = await api.get<ListUsersResponse>('/users');
+  return data;
+}
+
+export async function createUser(payload: CreateUserRequest): Promise<CreateUserResponse> {
+  const { data } = await api.post<CreateUserResponse>('/users', payload);
+  return data;
+}
+
+export async function updateUser(username: string, payload: UpdateUserRequest): Promise<UpdateUserResponse> {
+  const { data } = await api.put<UpdateUserResponse>(`/users/${encodeURIComponent(username)}`, payload);
+  return data;
+}
+
+export async function deleteUser(username: string): Promise<DeleteUserResponse> {
+  const { data } = await api.delete<DeleteUserResponse>(`/users/${encodeURIComponent(username)}`);
+  return data;
+}
+
+export async function resetUserPassword(username: string): Promise<ResetUserPasswordResponse> {
+  const { data } = await api.post<ResetUserPasswordResponse>(
+    `/users/${encodeURIComponent(username)}/reset-password`
+  );
+  return data;
 }
 
 export default api;
