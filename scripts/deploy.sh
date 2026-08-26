@@ -2,11 +2,11 @@
 #
 # Deploy de Metro Photos a producción — la Parte 7 de DEPLOY-PROD.md, ejecutable.
 #
-# Corre igual en Git Bash y en GitHub Actions. Todo lo que el runbook manual
-# sacaba de `.prod-outputs.env` (bucket del frontend, id de CloudFront, ids de
-# Cognito, ARN del layer de Sharp) se lee del stack en vivo: ese archivo está
-# gitignoreado y no existe en CI, y una copia desactualizada despliega contra
-# el lugar equivocado sin avisar.
+# Se corre a mano desde Git Bash. Todo lo que el runbook sacaba de
+# `.prod-outputs.env` (bucket del frontend, id de CloudFront, ids de Cognito,
+# ARN del layer de Sharp) se lee del stack en vivo: ese archivo hoy no existe
+# en esta máquina, y una copia desactualizada despliega contra el lugar
+# equivocado sin avisar.
 #
 #   ./scripts/deploy.sh                  backend + frontend
 #   ./scripts/deploy.sh --frontend       sólo el frontend
@@ -18,9 +18,12 @@
 set -euo pipefail
 
 STACK=${STACK:-metro-photos-prod}
-# Explícita siempre: el perfil local puede estar apuntando a otra región, y
-# `sam deploy` en la región equivocada no falla — crea un stack nuevo.
-REGION=${DEPLOY_REGION:-us-east-1}
+# Explícita siempre: el perfil local apunta a sa-east-1 y el stack vive en
+# us-east-1, y `sam deploy` en la región equivocada no falla — crea un stack
+# nuevo y vacío. Respeta REGION si ya la exportaste (Parte 1 de la guía).
+REGION=${DEPLOY_REGION:-${REGION:-us-east-1}}
+# El CLI lee AWS_DEFAULT_REGION, no REGION: exportarla acá evita que un comando
+# al que se nos escape el --region se vaya a la región del perfil.
 export AWS_DEFAULT_REGION=$REGION
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -55,8 +58,12 @@ Deploy de Metro Photos a producción (actualiza un stack ya creado).
   ./scripts/deploy.sh --skip-tests     saltea lint/build/test (no recomendado)
   ./scripts/deploy.sh --yes            sin confirmación interactiva
 
-Variables: STACK (default metro-photos-prod), DEPLOY_REGION (default us-east-1).
+Variables: STACK (default metro-photos-prod), REGION (default us-east-1).
 El resto — bucket, CloudFront, ids de Cognito, layer de Sharp — sale del stack.
+
+Credenciales: las toma el AWS CLI como siempre. Sirve tanto que estén en
+~/.aws/credentials (aws configure) como exportadas en la sesión; si están las
+dos, ganan las de la sesión. El preflight imprime con qué cuenta vas a operar.
 EOF
   exit 0
 }
@@ -82,7 +89,7 @@ for bin in aws sam pnpm node; do
 done
 
 aws sts get-caller-identity --region "$REGION" >/dev/null 2>&1 \
-  || die "las credenciales de AWS no funcionan (aws configure, o los secrets del workflow)"
+  || die "las credenciales de AWS no funcionan: revisá 'aws configure' o lo que tengas exportado en la sesión"
 
 ACCOUNT=$(aws sts get-caller-identity --region "$REGION" --query Account --output text)
 info "cuenta   $ACCOUNT"

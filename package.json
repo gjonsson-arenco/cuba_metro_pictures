@@ -12,7 +12,8 @@
     "local:down": "docker stop metro-localstack",
     "local:bootstrap": "pnpm --filter @metro/backend local:bootstrap",
     "local:api": "pnpm --filter @metro/backend local:server",
-    "local:web": "pnpm --filter @metro/frontend dev"
+    "local:web": "pnpm --filter @metro/frontend dev",
+    "deploy:prod": "bash scripts/deploy.sh"
   },
   "devDependencies": {
     "turbo": "^2.0.0",

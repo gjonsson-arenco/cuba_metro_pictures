@@ -1,7 +1,7 @@
 # Guía de Deploy MANUAL a PRODUCCIÓN — Metro Photos
 
 > El alta del stack, paso a paso con SAM CLI. Para **redeploys** no sigas esta guía a mano:
-> usá `./scripts/deploy.sh` (o el workflow que lo dispara solo). Ver [Parte 7](#parte-7--redeploys-posteriores).
+> usá `./scripts/deploy.sh` desde Git Bash. Ver [Parte 7](#parte-7--redeploys-posteriores).
 > Reemplaza a `DEPLOYMENT.md` (incompleto: seguirlo produce un PROD roto).
 > Última revisión: 2026-08-24 · Stack: `metro-photos-prod` · Región: `us-east-1`
 
@@ -624,15 +624,21 @@ Tres cosas que resuelve y a mano se olvidan:
 - **`.env.local` se aparta durante el build y se restaura al final**, con `trap`. Si igual se
   cuela, el chequeo del bundle corta el deploy antes de subir nada.
 
-## Automático en cada push
+### Credenciales y región
 
-`.github/workflows/deploy.yml` corre el mismo script cuando entra un push a `main`, y también
-a mano desde la pestaña Actions (con opción de desplegar sólo backend o sólo frontend).
+Las toma el AWS CLI como siempre: sirve que estén en `~/.aws/credentials` (`aws configure`) o
+exportadas en la sesión, y si están las dos ganan las de la sesión. **No hace falta el bloque
+de `export` de la [Parte 1](#variables-de-sesión)**: el script exporta `AWS_DEFAULT_REGION` él
+mismo y pasa `--region` en cada llamada, que es justamente el paso que, olvidado, te manda a la
+región del perfil (`sa-east-1` en esta máquina) y te dice `Stack does not exist` con el stack
+sano del otro lado.
 
-Necesita dos secrets en el repo: `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`. Todo lo demás
-lo deriva del stack.
+El preflight imprime cuenta, región y stack antes de tocar nada. Si la cuenta no es la que
+esperabas, cortá ahí.
 
-> Para volver a deploy manual, borrá el bloque `push:` del workflow y dejá `workflow_dispatch`.
+> **El deploy no está automatizado en CI, y es a propósito.** `.github/workflows/` sólo corre
+> lint/build/test. Desplegar desde Actions obligaría a subir credenciales de AWS a GitHub, y
+> el deploy lo dispara una persona.
 
 ## Los comandos sueltos
 
@@ -857,7 +863,6 @@ Nada de esto bloquea el deploy, pero conviene tenerlo en el radar:
 | Sin alarmas | No hay CloudWatch Alarms. Mínimo: errores de Lambda y 5xx del API. |
 | Bundles de 1.4–1.8 MB | El SDK de AWS va bundleado. Marcar `@aws-sdk/*` como external los baja a ~50 KB, pero atás la app a la versión del runtime. Opcional. |
 | Dominio propio | Certificado ACM en **us-east-1** + `Aliases` en la distribución + sumar el dominio a `AllowOrigins` del HttpApi. |
-| Credenciales de CI | El workflow de deploy usa access keys de un IAM user en secrets. Lo correcto es OIDC (`aws-actions/configure-aws-credentials` con `role-to-assume`): sin secretos de larga vida en GitHub. Requiere crear el OIDC provider y un rol en la cuenta. |
 | Sin entorno de staging | `deploy.sh` apunta al stack de prod. El template ya acepta `Environment=dev\|staging`: levantar un segundo stack y desplegar ahí primero daría dónde probar un cambio riesgoso antes de que lo vea la gente. |
 
 ---
