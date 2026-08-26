@@ -23,6 +23,7 @@ import {
 import { useAuth } from '../lib/AuthContext';
 import PhotoGrid from '../components/PhotoGrid';
 import Lightbox from '../components/Lightbox';
+import InstallPrompt from '../components/InstallPrompt';
 
 const PAGE_SIZE = 24;
 
@@ -272,6 +273,8 @@ export default function GalleryPage() {
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
+      <InstallPrompt />
+
       <div className="mb-8">
         <h1 className="section-title">Galería de Fotos</h1>
         <p className="section-subtitle">Campeonato Metropolitano de Vela · CUBA 2026</p>
