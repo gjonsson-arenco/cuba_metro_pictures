@@ -1,6 +1,7 @@
 # Guía de Deploy MANUAL a PRODUCCIÓN — Metro Photos
 
-> Deploy a mano desde tu máquina con SAM CLI. Sin GitHub Actions.
+> El alta del stack, paso a paso con SAM CLI. Para **redeploys** no sigas esta guía a mano:
+> usá `./scripts/deploy.sh` (o el workflow que lo dispara solo). Ver [Parte 7](#parte-7--redeploys-posteriores).
 > Reemplaza a `DEPLOYMENT.md` (incompleto: seguirlo produce un PROD roto).
 > Última revisión: 2026-08-24 · Stack: `metro-photos-prod` · Región: `us-east-1`
 
@@ -600,7 +601,42 @@ aws logs tail /aws/lambda/metro-photos-process-prod --follow --since 15m
 
 # PARTE 7 — Redeploys posteriores
 
-Ya con el stack creado, actualizar es corto. **Guardá esto como tu rutina de deploy.**
+## La rutina: `./scripts/deploy.sh`
+
+```bash
+./scripts/deploy.sh                 # backend + frontend, con confirmación
+./scripts/deploy.sh --frontend      # sólo el frontend
+./scripts/deploy.sh --dry-run       # construye y valida sin tocar AWS
+```
+
+El script hace, en orden: preflight (credenciales, que el stack exista, que
+`.env.local` no se cuele) → `pnpm lint && build && test` → bundle de las Lambdas
+con esbuild → `sam validate --lint` → `sam deploy` → build del frontend →
+`s3 sync` con los headers de cache correctos → invalidación → smoke test.
+
+Tres cosas que resuelve y a mano se olvidan:
+
+- **La región va explícita.** El perfil local puede estar en otra (`aws configure get region`),
+  y `sam deploy` en la región equivocada no falla: crea un stack nuevo, vacío.
+- **Nada sale de `.prod-outputs.env`.** Bucket, CloudFront, ids de Cognito y el ARN del layer
+  de Sharp se leen del stack en vivo. Ese archivo está gitignoreado, no existe en CI, y una
+  copia vieja despliega contra el lugar equivocado en silencio.
+- **`.env.local` se aparta durante el build y se restaura al final**, con `trap`. Si igual se
+  cuela, el chequeo del bundle corta el deploy antes de subir nada.
+
+## Automático en cada push
+
+`.github/workflows/deploy.yml` corre el mismo script cuando entra un push a `main`, y también
+a mano desde la pestaña Actions (con opción de desplegar sólo backend o sólo frontend).
+
+Necesita dos secrets en el repo: `AWS_ACCESS_KEY_ID` y `AWS_SECRET_ACCESS_KEY`. Todo lo demás
+lo deriva del stack.
+
+> Para volver a deploy manual, borrá el bloque `push:` del workflow y dejá `workflow_dispatch`.
+
+## Los comandos sueltos
+
+Lo que el script hace por dentro, por si necesitás correr un paso aislado:
 
 ### Backend
 
@@ -821,7 +857,8 @@ Nada de esto bloquea el deploy, pero conviene tenerlo en el radar:
 | Sin alarmas | No hay CloudWatch Alarms. Mínimo: errores de Lambda y 5xx del API. |
 | Bundles de 1.4–1.8 MB | El SDK de AWS va bundleado. Marcar `@aws-sdk/*` como external los baja a ~50 KB, pero atás la app a la versión del runtime. Opcional. |
 | Dominio propio | Certificado ACM en **us-east-1** + `Aliases` en la distribución + sumar el dominio a `AllowOrigins` del HttpApi. |
-| CI/CD | Los workflows en `.github/workflows/` quedaron sin usar y siguen llamando a `sam build`. Si algún día los querés: reemplazar `sam build` por `pnpm --filter @metro/backend build:lambda`, pasar `SharpLayerArn`, y cambiar `pnpm --filter X build` por `pnpm build` (hoy no compilan `@metro/shared` primero). |
+| Credenciales de CI | El workflow de deploy usa access keys de un IAM user en secrets. Lo correcto es OIDC (`aws-actions/configure-aws-credentials` con `role-to-assume`): sin secretos de larga vida en GitHub. Requiere crear el OIDC provider y un rol en la cuenta. |
+| Sin entorno de staging | `deploy.sh` apunta al stack de prod. El template ya acepta `Environment=dev\|staging`: levantar un segundo stack y desplegar ahí primero daría dónde probar un cambio riesgoso antes de que lo vea la gente. |
 
 ---
 

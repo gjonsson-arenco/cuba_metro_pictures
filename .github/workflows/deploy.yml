@@ -1,0 +1,60 @@
+name: Deploy a producción
+
+# Cada push a main despliega. Para volver a deploy manual, borrá el bloque
+# `push:` y dejá sólo `workflow_dispatch`.
+on:
+  push:
+    branches: [main]
+    # Un typo en un .md no justifica un deploy a producción.
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Qué desplegar
+        type: choice
+        default: todo
+        options: [todo, backend, frontend]
+
+# Un deploy a la vez: dos corriendo en paralelo pueden dejar el bundle del
+# frontend apuntando a un backend que todavía no terminó de actualizarse.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      # La misma mayor que el runtime de las Lambdas (nodejs24.x).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      # El script corre lint + build + test antes de tocar nada, y saca del
+      # stack el bucket, CloudFront, Cognito y el ARN del layer de Sharp.
+      - name: Deploy
+        run: |
+          case "${{ inputs.target || 'todo' }}" in
+            backend)  ./scripts/deploy.sh --backend --yes ;;
+            frontend) ./scripts/deploy.sh --frontend --yes ;;
+            *)        ./scripts/deploy.sh --yes ;;
+          esac
