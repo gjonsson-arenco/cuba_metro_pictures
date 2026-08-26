@@ -42,21 +42,40 @@ export default function PhotoGrid({
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    // En el teléfono, mosaico a sangre: 3 columnas, sin bordes ni márgenes, y
+    // el alto de fila atado al ancho de viewport para que la celda sea cuadrada.
+    // De `sm` para arriba vuelve la grilla de tarjetas de siempre.
+    <div className="-mx-4 grid grid-cols-3 gap-0.5 auto-rows-[33.33vw] sm:mx-0 sm:grid-cols-2 sm:gap-4 sm:auto-rows-auto lg:grid-cols-3">
       {photos.map((photo, index) => {
         const isSelected = selected.has(photo.photoId);
         const thumbSrc = photo.urls?.thumbnail ?? photo.urls?.medium ?? photo.urls?.original ?? photo.s3Key;
         const isBusy = busy?.id === photo.photoId;
+        // Una de cada seis ocupa 2x2. El bloque cierra un cuadrado de 3x3
+        // exacto, así que la grilla no deja huecos y no hace falta `dense`
+        // — que reordenaría las fotos y rompería el orden del visor.
+        const isHero = index % 6 === 0;
+        // El thumbnail son 300px: sobra para una celda chica y queda borroso
+        // estirado a dos tercios de pantalla. Con srcset elige el navegador,
+        // que además conoce la densidad del display; hardcodear `medium` en la
+        // grande gastaría de más en desktop, donde la celda vuelve a ser chica.
+        const srcSet = photo.urls?.thumbnail && photo.urls?.medium
+          ? `${photo.urls.thumbnail} 300w, ${photo.urls.medium} 800w`
+          : undefined;
+        const sizes = srcSet
+          ? `(min-width: 1024px) 400px, (min-width: 640px) 50vw, ${isHero ? '67vw' : '34vw'}`
+          : undefined;
         return (
           <div
             key={photo.photoId}
-            className={`group relative aspect-square overflow-hidden rounded-xl cursor-pointer shadow-card hover:shadow-lg transition-all ${
-              isSelected ? 'ring-4 ring-white' : ''
-            }`}
+            className={`group relative overflow-hidden cursor-pointer transition-all sm:aspect-square sm:rounded-xl sm:shadow-card sm:hover:shadow-lg ${
+              isHero ? 'col-span-2 row-span-2 sm:col-span-1 sm:row-span-1' : ''
+            } ${isSelected ? 'ring-2 ring-inset ring-white sm:ring-4 sm:ring-offset-0' : ''}`}
             onClick={() => onPhotoClick(index)}
           >
             <img
               src={thumbSrc}
+              srcSet={srcSet}
+              sizes={sizes}
               alt={photo.filename}
               loading="lazy"
               className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
@@ -66,10 +85,12 @@ export default function PhotoGrid({
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggleSelect(photo.photoId); }}
               aria-label={isSelected ? 'Deseleccionar' : 'Seleccionar'}
-              className={`absolute top-2 left-2 w-7 h-7 rounded-md flex items-center justify-center border-2 text-sm font-bold transition-all ${
+              // En el teléfono va siempre visible: sin hover no habría forma de
+              // descubrir que las fotos se pueden seleccionar.
+              className={`absolute top-1 left-1 sm:top-2 sm:left-2 w-6 h-6 sm:w-7 sm:h-7 rounded-md flex items-center justify-center border-2 text-sm font-bold transition-all ${
                 isSelected
                   ? 'bg-white border-white text-cuba-navy'
-                  : 'bg-white/85 border-white text-transparent hover:text-cuba-navy opacity-0 group-hover:opacity-100'
+                  : 'bg-white/60 border-white/80 text-transparent hover:text-cuba-navy sm:bg-white/85 sm:border-white sm:opacity-0 sm:group-hover:opacity-100'
               }`}
             >
               {isSelected ? '✓' : '○'}
@@ -133,8 +154,10 @@ export default function PhotoGrid({
               </div>
             )}
 
+            {/* En las celdas chicas del mosaico las chapitas tapan la foto: en
+                el teléfono quedan sólo en la grande. */}
             {(photo.sailingClass || photo.day) && (
-              <div className="absolute bottom-2 left-2 flex flex-wrap gap-1">
+              <div className={`absolute bottom-1 left-1 sm:bottom-2 sm:left-2 flex-wrap gap-1 ${isHero ? 'flex' : 'hidden'} sm:flex`}>
                 {photo.sailingClass && (
                   <span className="inline-flex items-center gap-1 bg-black/70 backdrop-blur text-white text-[10px] px-2 py-1 rounded-full">
                     <img
