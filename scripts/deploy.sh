@@ -310,16 +310,49 @@ if [ "$DRY_RUN" = 1 ]; then
 fi
 
 step "Smoke test"
-failures=0
+
+# Dos categorías distintas, porque significan cosas distintas: que un endpoint
+# conteste lo que no esperábamos es un problema del deploy, y que no conteste
+# nada puede ser de esta máquina (proxy, DNS, TLS) con el deploy intacto.
+mismatches=0
+unreachable=0
+
 check() { # nombre, esperado, url, args extra...
   local name=$1 expected=$2 url=$3; shift 3
-  local code
-  code=$(curl -s -o /dev/null -w '%{http_code}' "$@" "$url" || echo 000)
+  local code errfile
+  errfile=$(mktemp)
+  # `|| true`: curl sale distinto de cero cuando no hay respuesta, y eso ya lo
+  # leemos del código. Sin esto, set -e mata el script antes de reportar.
+  code=$(curl -sS --connect-timeout 10 --max-time 30 \
+           -o /dev/null -w '%{http_code}' "$@" "$url" 2>"$errfile") || true
+
   if [ "$code" = "$expected" ]; then
     ok "$name ($code)"
+  elif [ -z "$code" ] || [ "$code" = "000" ]; then
+    warn "$name: sin respuesta — $(tr -d '\r\n' < "$errfile" | cut -c1-120)"
+    unreachable=$((unreachable + 1))
   else
     printf '%s    ✗ %s: esperaba %s, vino %s%s\n' "$RED" "$name" "$expected" "$code" "$OFF"
-    failures=$((failures + 1))
+    mismatches=$((mismatches + 1))
+  fi
+  rm -f "$errfile"
+}
+
+check_body() { # nombre, url, patrón que tiene que aparecer
+  local name=$1 url=$2 pattern=$3
+  local body
+  body=$(curl -sS --connect-timeout 10 --max-time 30 "$url" 2>/dev/null) || body=''
+  if [ -z "$body" ]; then
+    warn "$name: sin respuesta"
+    unreachable=$((unreachable + 1))
+  elif printf '%s' "$body" | grep -q "$pattern"; then
+    ok "$name"
+  else
+    # CloudFront tiene CustomErrorResponses 403/404 -> index.html con status
+    # 200, así que un archivo que no existe se ve como un 200 impecable. Por
+    # eso estos dos se miran por contenido y no por código.
+    printf '%s    ✗ %s: contesta, pero no es el archivo (¿falta desplegar el frontend?)%s\n' "$RED" "$name" "$OFF"
+    mismatches=$((mismatches + 1))
   fi
 }
 
@@ -328,11 +361,19 @@ check "settings públicos"      200 "$API_URL/settings"
 check "upload sin token → 401" 401 "$API_URL/upload/presigned" -X POST
 check "SPA"                    200 "$CF_URL/"
 check "deep link SPA"          200 "$CF_URL/admin"
-check "manifest"               200 "$CF_URL/manifest.webmanifest"
-check "service worker"         200 "$CF_URL/sw.js"
 
-if [ "$failures" -gt 0 ]; then
-  die "$failures chequeo(s) fallaron — mirá los logs: sam logs --stack-name $STACK --tail"
+if [ "$DO_FRONTEND" = 1 ]; then
+  check_body "manifest"       "$CF_URL/manifest.webmanifest" '"start_url"'
+  check_body "service worker" "$CF_URL/sw.js"                'metro-'
+fi
+
+if [ "$mismatches" -gt 0 ]; then
+  die "$mismatches chequeo(s) contestaron algo distinto a lo esperado — mirá los logs: sam logs --stack-name $STACK --tail"
+fi
+
+if [ "$unreachable" -gt 0 ]; then
+  warn "$unreachable chequeo(s) no obtuvieron respuesta desde esta máquina (proxy, DNS o TLS)."
+  warn "El deploy ya se aplicó: abrí $CF_URL en el browser antes de dar nada por roto."
 fi
 
 printf '\n%s✓ Deploy completo%s  %s\n' "$GREEN" "$OFF" "$CF_URL"
