@@ -13,6 +13,16 @@ Amplify.configure({
   }
 });
 
+// Registered only in a production build: in dev it would sit between Vite's
+// HMR and the page for no benefit.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .catch(err => console.warn('Service worker registration failed:', err));
+  });
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

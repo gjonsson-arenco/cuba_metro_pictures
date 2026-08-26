@@ -6,15 +6,28 @@ import { s3Client, RAW_BUCKET } from '../lib/s3';
 import { dynamoDB, TABLE_NAME } from '../lib/dynamodb';
 import { ok, badRequest, unauthorized, notFound, internalError } from '../lib/response';
 import { extractBearerToken, verifyToken } from '../lib/auth';
+import { getSettings } from '../lib/settings';
 import { DownloadPhotoResponse } from '@metro/shared';
 
 const EXPIRES_IN = 900;
 
 export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
   try {
+    // This route has no API Gateway authorizer: whether an anonymous caller may
+    // download is a runtime setting, so the check has to happen here. A token,
+    // when present, is still verified -- an invalid one is rejected outright
+    // rather than silently downgraded to an anonymous request.
     const token = extractBearerToken(event.headers?.Authorization ?? event.headers?.authorization);
-    if (!token) return unauthorized('Login required to download');
-    await verifyToken(token);
+    if (token) {
+      try {
+        await verifyToken(token);
+      } catch {
+        return unauthorized('Invalid token');
+      }
+    } else {
+      const { publicDownloads } = await getSettings();
+      if (!publicDownloads) return unauthorized('Login required to download');
+    }
 
     const photoId = event.pathParameters?.photoId;
     if (!photoId) return badRequest('photoId is required');

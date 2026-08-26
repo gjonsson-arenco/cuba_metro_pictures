@@ -1,5 +1,6 @@
 import axios from 'axios';
 import JSZip from 'jszip';
+import { isTouchDevice } from './device';
 import {
   ListPhotosResponse,
   PresignedUploadResponse,
@@ -18,7 +19,10 @@ import {
   UpdateUserRequest,
   UpdateUserResponse,
   DeleteUserResponse,
-  ResetUserPasswordResponse
+  ResetUserPasswordResponse,
+  GetSettingsResponse,
+  UpdateSettingsRequest,
+  UpdateSettingsResponse
 } from '@metro/shared';
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? '/api';
@@ -106,6 +110,68 @@ export async function getDownloadInfo(photoId: string): Promise<DownloadPhotoRes
   return data;
 }
 
+// ── Downloads ─────────────────────────────────────────────────────────────
+// iOS has no web API that can write into the Photos app: an `<a download>` --
+// like any `Content-Disposition: attachment` -- lands in Archivos. The only
+// route to the camera roll is the native share sheet, where the user gets
+// "Guardar en Fotos". So on touch devices we share, and everywhere else we
+// keep the plain download (a share dialog on desktop would be a regression).
+
+const IMAGE_MIME: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp'
+};
+
+function mimeFromName(filename: string): string {
+  return IMAGE_MIME[filename.split('.').pop()?.toLowerCase() ?? ''] ?? 'image/jpeg';
+}
+
+/**
+ * Whether this device offers the share sheet for image files. Used for copy
+ * ("Guardar en Fotos" vs "Descargar"); the actual flow re-checks per file set,
+ * because `canShare` also weighs how many files and how big they are.
+ */
+export function canSharePhotos(): boolean {
+  if (!isTouchDevice()) return false;
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return false;
+  try {
+    // A byte, not an empty blob: some implementations reject a zero-length file.
+    const probe = new File([new Uint8Array(1)], 'probe.jpg', { type: 'image/jpeg' });
+    return navigator.canShare?.({ files: [probe] }) === true;
+  } catch {
+    return false;
+  }
+}
+
+function canShareFiles(files: File[]): boolean {
+  if (!isTouchDevice()) return false;
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') return false;
+  try {
+    return navigator.canShare?.({ files }) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** True when the share sheet handled it (including a deliberate cancel). */
+async function shareFiles(files: File[], title: string): Promise<boolean> {
+  if (!canShareFiles(files)) return false;
+  try {
+    await navigator.share({ files, title });
+    return true;
+  } catch (err) {
+    // The user dismissed the sheet: a finished interaction, not a failure.
+    if ((err as Error)?.name === 'AbortError') return true;
+    // NotAllowedError shows up when Safari's transient activation expired while
+    // the originals were downloading. Falling through to Archivos beats
+    // silently doing nothing.
+    console.warn('Share sheet unavailable, falling back to download:', err);
+    return false;
+  }
+}
+
 function triggerBrowserDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -117,37 +183,56 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export async function downloadSinglePhoto(photoId: string): Promise<void> {
+async function fetchPhotoFile(photoId: string, fallbackName?: string): Promise<File> {
   const info = await getDownloadInfo(photoId);
   const res = await fetch(info.url);
   if (!res.ok) throw new Error(`Download failed: ${res.status}`);
   const blob = await res.blob();
-  triggerBrowserDownload(blob, info.filename);
+  const filename = info.filename || fallbackName || `${photoId}.jpg`;
+  return new File([blob], filename, { type: blob.type || mimeFromName(filename) });
 }
 
-export async function downloadPhotosAsZip(
+export async function downloadSinglePhoto(photoId: string): Promise<void> {
+  const file = await fetchPhotoFile(photoId);
+  if (await shareFiles([file], file.name)) return;
+  triggerBrowserDownload(file, file.name);
+}
+
+/**
+ * Selection download. On a phone this hands every original to the share sheet
+ * so they can go straight to Fotos; elsewhere (and when the set is too big for
+ * the sheet) it falls back to a single zip, which no phone can file in Fotos.
+ */
+export async function downloadPhotos(
   photos: Photo[],
   onProgress?: (done: number, total: number) => void
 ): Promise<void> {
   if (photos.length === 0) return;
-  const zip = new JSZip();
+  if (photos.length === 1) {
+    await downloadSinglePhoto(photos[0].photoId);
+    return;
+  }
+
   const seen = new Map<string, number>();
+  const files: File[] = [];
   let done = 0;
 
   await Promise.all(photos.map(async (p) => {
     try {
-      const info = await getDownloadInfo(p.photoId);
-      const res = await fetch(info.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      let name = info.filename || `${p.photoId}.jpg`;
-      const count = seen.get(name) ?? 0;
-      seen.set(name, count + 1);
-      if (count > 0) {
-        const dot = name.lastIndexOf('.');
-        name = dot > 0 ? `${name.slice(0, dot)}_${count}${name.slice(dot)}` : `${name}_${count}`;
+      const file = await fetchPhotoFile(p.photoId, `${p.photoId}.jpg`);
+      // Two originals can share a filename; a zip entry (and a share sheet)
+      // needs them distinct.
+      const count = seen.get(file.name) ?? 0;
+      seen.set(file.name, count + 1);
+      if (count === 0) {
+        files.push(file);
+      } else {
+        const dot = file.name.lastIndexOf('.');
+        const name = dot > 0
+          ? `${file.name.slice(0, dot)}_${count}${file.name.slice(dot)}`
+          : `${file.name}_${count}`;
+        files.push(new File([file], name, { type: file.type }));
       }
-      zip.file(name, blob);
     } catch (err) {
       console.warn('Skipping', p.photoId, err);
     } finally {
@@ -156,6 +241,11 @@ export async function downloadPhotosAsZip(
     }
   }));
 
+  if (files.length === 0) throw new Error('No se pudo descargar ninguna foto');
+  if (await shareFiles(files, 'Metropolitano 2026')) return;
+
+  const zip = new JSZip();
+  files.forEach(f => zip.file(f.name, f));
   const zipBlob = await zip.generateAsync({ type: 'blob' });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   triggerBrowserDownload(zipBlob, `campeonato-metro-${stamp}.zip`);
@@ -198,6 +288,18 @@ export async function resetUserPassword(username: string): Promise<ResetUserPass
   const { data } = await api.post<ResetUserPasswordResponse>(
     `/users/${encodeURIComponent(username)}/reset-password`
   );
+  return data;
+}
+
+// ── Site settings ─────────────────────────────────────────────────────────
+
+export async function getSettings(): Promise<GetSettingsResponse> {
+  const { data } = await api.get<GetSettingsResponse>('/settings');
+  return data;
+}
+
+export async function updateSettings(payload: UpdateSettingsRequest): Promise<UpdateSettingsResponse> {
+  const { data } = await api.put<UpdateSettingsResponse>('/settings', payload);
   return data;
 }
 

@@ -381,7 +381,7 @@ Resources:
       FunctionName: !Sub "metro-photos-download-${Environment}"
       Handler: index.handler
       CodeUri: ../../packages/backend/.lambda/downloadPhoto/
-      Description: Presigned GET of the original file (login required)
+      Description: Presigned GET of the original file (login required unless publicDownloads is on)
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref PhotosTable
@@ -394,8 +394,9 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /photos/{photoId}/download
             Method: GET
-            Auth:
-              Authorizer: CognitoAuthorizer
+            # No Authorizer on purpose. The `publicDownloads` setting decides at
+            # runtime whether an anonymous caller is allowed, so the handler
+            # verifies the bearer token itself (and rejects an invalid one).
 
   UpdatePhotoMetadataFunction:
     Type: AWS::Serverless::Function
@@ -474,6 +475,48 @@ Resources:
                 Rules:
                   - Name: prefix
                     Value: originals/
+
+  # ============================================================
+  # Site settings
+  # ============================================================
+  GetSettingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-settings-get-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/getSettings/
+      Description: Read site settings (public - the gallery needs them logged out)
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings
+            Method: GET
+
+  UpdateSettingsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "metro-photos-settings-update-${Environment}"
+      Handler: index.handler
+      CodeUri: ../../packages/backend/.lambda/updateSettings/
+      Description: Change site settings (admin only)
+      Policies:
+        # Crud, not Write: the handler reads the current settings before writing.
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PhotosTable
+      Events:
+        Api:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings
+            Method: PUT
+            Auth:
+              Authorizer: CognitoAuthorizer
 
   # ============================================================
   # User management (ABM) - admin only, backed by Cognito

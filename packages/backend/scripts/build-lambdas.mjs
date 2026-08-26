@@ -23,6 +23,8 @@ const FUNCTIONS = [
   'updatePhotoMetadata',
   'rotatePhoto',
   'processPhoto',
+  'getSettings',
+  'updateSettings',
   'listUsers',
   'createUser',
   'updateUser',

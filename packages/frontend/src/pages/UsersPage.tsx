@@ -6,9 +6,18 @@ import {
   USER_ROLES,
   USER_ROLE_LABELS,
   USER_ROLE_DESCRIPTIONS,
+  AppSettings,
   isValidEmail
 } from '@metro/shared';
-import { listUsers, createUser, updateUser, deleteUser, resetUserPassword } from '../lib/api';
+import {
+  listUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  resetUserPassword,
+  getSettings,
+  updateSettings
+} from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
 
 interface Credential {
@@ -42,6 +51,9 @@ export default function UsersPage() {
   const [credential, setCredential] = useState<Credential | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [savingSetting, setSavingSetting] = useState(false);
+
   const refresh = useCallback(async () => {
     try {
       const { users } = await listUsers();
@@ -57,6 +69,30 @@ export default function UsersPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    getSettings()
+      .then(({ settings }) => setSettings(settings))
+      .catch(err => setError(errorMessage(err, 'No se pudieron cargar las opciones del sitio')));
+  }, []);
+
+  async function handlePublicDownloads(publicDownloads: boolean) {
+    setSavingSetting(true);
+    setError('');
+    // Optimistic: the switch is the only thing on screen that reflects it, and
+    // a failed save puts the old value straight back.
+    const previous = settings;
+    setSettings(prev => (prev ? { ...prev, publicDownloads } : prev));
+    try {
+      const { settings: saved } = await updateSettings({ publicDownloads });
+      setSettings(saved);
+    } catch (err) {
+      setSettings(previous);
+      setError(errorMessage(err, 'No se pudo guardar la opción'));
+    } finally {
+      setSavingSetting(false);
+    }
+  }
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -191,6 +227,32 @@ export default function UsersPage() {
           </div>
         </div>
       )}
+
+      {/* Opciones del sitio */}
+      <div className="card p-6 mb-8">
+        <h2 className="font-serif text-xl font-bold text-cuba-navy mb-4">Descargas</h2>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={settings?.publicDownloads ?? false}
+            disabled={settings === null || savingSetting}
+            onChange={e => handlePublicDownloads(e.target.checked)}
+            className="mt-0.5 h-5 w-5 rounded border-cuba-navy/25 text-cuba-navy focus:ring-cuba-navy disabled:opacity-40"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-cuba-navy">
+              Permitir descargas sin iniciar sesión
+            </span>
+            <span className="block text-xs text-cuba-navy/60 mt-1">
+              {settings === null
+                ? 'Cargando…'
+                : settings.publicDownloads
+                  ? 'Cualquier visitante puede bajar las fotos en calidad original.'
+                  : 'Sólo usuarios con sesión iniciada pueden bajar las fotos. Los visitantes ven la galería y el botón los manda a ingresar.'}
+            </span>
+          </span>
+        </label>
+      </div>
 
       {/* Alta */}
       <div className="card p-6 mb-8">

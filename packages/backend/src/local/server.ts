@@ -13,6 +13,8 @@ import { handler as rotatePhoto } from '../functions/rotatePhoto';
 import { handler as downloadPhoto } from '../functions/downloadPhoto';
 import { handler as updatePhotoMetadata } from '../functions/updatePhotoMetadata';
 import { handler as processPhoto } from '../functions/processPhoto';
+import { handler as getSettings } from '../functions/getSettings';
+import { handler as updateSettings } from '../functions/updateSettings';
 
 const PORT = parseInt(process.env.LOCAL_API_PORT ?? '4000', 10);
 
@@ -69,6 +71,8 @@ app.delete('/photos/:photoId', wrap(deletePhoto, req => ({ photoId: req.params.p
 app.put('/photos/:photoId/rotate', wrap(rotatePhoto, req => ({ photoId: req.params.photoId })));
 app.put('/photos/:photoId/metadata', wrap(updatePhotoMetadata, req => ({ photoId: req.params.photoId })));
 app.get('/photos/:photoId/download', wrap(downloadPhoto, req => ({ photoId: req.params.photoId })));
+app.get('/settings', wrap(getSettings));
+app.put('/settings', wrap(updateSettings));
 
 // Local simulation of S3 ObjectCreated trigger for processPhoto.
 // The frontend PUTs to a presigned URL; call this endpoint after to run image processing.
@@ -127,5 +131,7 @@ app.listen(PORT, () => {
   console.log('  PUT    /photos/:photoId/metadata  { tags?, sailingClass?, day? }');
   console.log('  PUT    /photos/:photoId/rotate    { direction: "cw" | "ccw" }');
   console.log('  GET    /photos/:photoId/download');
+  console.log('  GET    /settings');
+  console.log('  PUT    /settings                   { publicDownloads }');
   console.log('  POST   /_local/process/:photoId?ext=jpg   (simulates S3 trigger)');
 });

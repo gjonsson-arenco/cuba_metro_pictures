@@ -100,6 +100,28 @@ export interface DownloadPhotoResponse {
   expiresIn: number;
 }
 
+// ── App settings ──────────────────────────────────────────────────────────
+// Site-wide switches an admin can flip at runtime. Stored as a single
+// DynamoDB item so no redeploy is needed to change them.
+export interface AppSettings {
+  /** When true, visitors who are not logged in can download originals too. */
+  publicDownloads: boolean;
+}
+
+export const DEFAULT_APP_SETTINGS: AppSettings = {
+  publicDownloads: false
+};
+
+export interface GetSettingsResponse {
+  settings: AppSettings;
+}
+
+export type UpdateSettingsRequest = Partial<AppSettings>;
+
+export interface UpdateSettingsResponse {
+  settings: AppSettings;
+}
+
 export interface ApiError {
   error: string;
   message: string;

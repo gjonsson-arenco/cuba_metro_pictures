@@ -13,7 +13,9 @@ import {
   listPhotos,
   setTokenProvider,
   downloadSinglePhoto,
-  downloadPhotosAsZip,
+  downloadPhotos,
+  canSharePhotos,
+  getSettings,
   rotatePhoto as apiRotate,
   deletePhoto as apiDelete,
   updatePhotoMetadata
@@ -23,6 +25,9 @@ import PhotoGrid from '../components/PhotoGrid';
 import Lightbox from '../components/Lightbox';
 
 const PAGE_SIZE = 24;
+
+/** On a phone the originals go through the share sheet, not to Archivos. */
+const SHARE_MODE = canSharePhotos();
 
 function bustCache(photo: Photo, stamp: number): Photo {
   const bust = (u?: string) => (u ? `${u}${u.includes('?') ? '&' : '?'}v=${stamp}` : u);
@@ -85,6 +90,7 @@ export default function GalleryPage() {
   const [hasMore, setHasMore] = useState(false);
   const [lastKey, setLastKey] = useState<string | undefined>();
   const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null);
+  const [publicDownloads, setPublicDownloads] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
   const userTogglingRef = useRef(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -93,6 +99,20 @@ export default function GalleryPage() {
   useEffect(() => {
     setTokenProvider(getToken);
   }, [getToken]);
+
+  // Only visitors need this: a logged-in user may always download.
+  useEffect(() => {
+    if (isLoggedIn) return;
+    let cancelled = false;
+    getSettings()
+      .then(({ settings }) => {
+        if (!cancelled) setPublicDownloads(settings.publicDownloads);
+      })
+      .catch(err => console.warn('Failed to load settings:', err));
+    return () => { cancelled = true; };
+  }, [isLoggedIn]);
+
+  const canDownload = isLoggedIn || publicDownloads;
 
   useEffect(() => {
     function onScroll() {
@@ -183,17 +203,9 @@ export default function GalleryPage() {
 
   async function handleDownloadSelected() {
     if (selectedPhotos.length === 0) return;
-    if (selectedPhotos.length === 1) {
-      try {
-        await downloadSinglePhoto(selectedPhotos[0].photoId);
-      } catch (err) {
-        alert('Error al descargar: ' + (err as Error).message);
-      }
-      return;
-    }
     setDownloadProgress({ done: 0, total: selectedPhotos.length });
     try {
-      await downloadPhotosAsZip(selectedPhotos, (done, total) => setDownloadProgress({ done, total }));
+      await downloadPhotos(selectedPhotos, (done, total) => setDownloadProgress({ done, total }));
     } catch (err) {
       alert('Error al descargar: ' + (err as Error).message);
     } finally {
@@ -421,13 +433,18 @@ export default function GalleryPage() {
       {currentLightboxPhoto && (
         <Lightbox
           photo={currentLightboxPhoto}
+          prevPhoto={lightboxIndex !== null ? photos[lightboxIndex - 1] : undefined}
+          nextPhoto={lightboxIndex !== null ? photos[lightboxIndex + 1] : undefined}
+          index={lightboxIndex !== null ? lightboxIndex + 1 : undefined}
+          total={photos.length}
           onClose={() => setLightboxIndex(null)}
           onPrev={() => setLightboxIndex(i => (i !== null && i > 0 ? i - 1 : i))}
           onNext={() => setLightboxIndex(i => (i !== null && i < photos.length - 1 ? i + 1 : i))}
           hasPrev={lightboxIndex !== null && lightboxIndex > 0}
           hasNext={lightboxIndex !== null && lightboxIndex < photos.length - 1}
           canEdit={canManagePhotos}
-          onDownload={isLoggedIn ? handleSingleDownload : undefined}
+          shareMode={SHARE_MODE}
+          onDownload={canDownload ? handleSingleDownload : undefined}
           onRotate={canManagePhotos ? handleRotate : undefined}
           onDelete={canManagePhotos ? handleDelete : undefined}
           onMetadata={canManagePhotos ? handleMetadata : undefined}
@@ -446,15 +463,17 @@ export default function GalleryPage() {
           >
             Limpiar
           </button>
-          {isLoggedIn ? (
+          {canDownload ? (
             <button
               onClick={handleDownloadSelected}
               disabled={downloadProgress !== null}
               className="bg-white hover:bg-cuba-cream text-cuba-navy text-sm font-semibold px-4 py-2 rounded-full disabled:opacity-60 shadow-md"
             >
               {downloadProgress
-                ? `Descargando ${downloadProgress.done}/${downloadProgress.total}…`
-                : selectedIds.size === 1 ? 'Descargar' : 'Descargar zip'}
+                ? `${SHARE_MODE ? 'Preparando' : 'Descargando'} ${downloadProgress.done}/${downloadProgress.total}…`
+                : SHARE_MODE
+                  ? 'Guardar en Fotos'
+                  : selectedIds.size === 1 ? 'Descargar' : 'Descargar zip'}
             </button>
           ) : (
             <Link

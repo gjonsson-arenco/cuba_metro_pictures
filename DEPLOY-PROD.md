@@ -471,13 +471,18 @@ Si aparece `localhost:4000`, el `.env.local` se te coló: repetí 4.1 y rebuilde
 # assets con hash -> cache eterno
 aws s3 sync packages/frontend/dist/ s3://$FE_BUCKET/ --delete \
   --cache-control "public, max-age=31536000, immutable" \
-  --exclude "index.html"
+  --exclude "index.html" --exclude "sw.js" --exclude "manifest.webmanifest"
 
-# index.html -> nunca cachear
-aws s3 cp packages/frontend/dist/index.html s3://$FE_BUCKET/index.html \
-  --cache-control "no-cache, no-store, must-revalidate"
+# index.html + los archivos de la PWA -> nunca cachear.
+# sw.js sobre todo: si se cachea, quien ya instalo la app se queda con ese
+# service worker y ningun deploy posterior le llega.
+for f in index.html sw.js manifest.webmanifest; do
+  aws s3 cp packages/frontend/dist/$f s3://$FE_BUCKET/$f \
+    --cache-control "no-cache, no-store, must-revalidate"
+done
 
-MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation --distribution-id $CF_ID --paths "/index.html"
+MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation --distribution-id $CF_ID \
+  --paths "/index.html" "/sw.js" "/manifest.webmanifest"
 ```
 
 El `MSYS_NO_PATHCONV=1` no es opcional: sin él, Git Bash convierte `/index.html` a
@@ -616,10 +621,14 @@ cd /c/Projects/Cuba/MetroPictures && source .prod-outputs.env
 
 pnpm --filter @metro/frontend build
 aws s3 sync packages/frontend/dist/ s3://$FE_BUCKET/ --delete \
-  --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-aws s3 cp packages/frontend/dist/index.html s3://$FE_BUCKET/index.html \
-  --cache-control "no-cache, no-store, must-revalidate"
-MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation --distribution-id $CF_ID --paths "/index.html"
+  --cache-control "public, max-age=31536000, immutable" \
+  --exclude "index.html" --exclude "sw.js" --exclude "manifest.webmanifest"
+for f in index.html sw.js manifest.webmanifest; do
+  aws s3 cp packages/frontend/dist/$f s3://$FE_BUCKET/$f \
+    --cache-control "no-cache, no-store, must-revalidate"
+done
+MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation --distribution-id $CF_ID \
+  --paths "/index.html" "/sw.js" "/manifest.webmanifest"
 ```
 
 ### Actualizar el layer de Sharp
@@ -762,6 +771,12 @@ Cognito **permite que cualquiera se registre** con la API pública `SignUp` usan
 va horneado en el bundle JS — y como `downloadPhoto` sólo exige estar logueado, eso regalaba todos
 los originales.
 
+> Desde el ABM, un admin puede además abrir las descargas a visitantes sin sesión
+> (`publicDownloads`, en Usuarios → Descargas). Es una decisión de runtime guardada en DynamoDB:
+> la ruta `/photos/{photoId}/download` ya no lleva authorizer de API Gateway y es el propio
+> handler el que verifica el token (y rechaza uno inválido) o consulta el setting. Con el switch
+> apagado — el default — el comportamiento es el de siempre.
+
 Con el flag, la API `SignUp` devuelve `NotAuthorizedException` y la única vía de alta es el ABM.
 
 > Si algún día hay que revertirlo, hacelo por template. `aws cognito-idp update-user-pool` resetea
@@ -779,9 +794,15 @@ sam validate --lint --template packages/infra/template.yaml --region $REGION
 sam deploy --template packages/infra/template.yaml --stack-name $STACK --no-confirm-changeset
 
 pnpm --filter @metro/frontend build
-aws s3 sync packages/frontend/dist/ s3://$FE_BUCKET/ --delete   --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
-aws s3 cp packages/frontend/dist/index.html s3://$FE_BUCKET/index.html   --cache-control "no-cache, no-store, must-revalidate"
-MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation --distribution-id $CF_ID --paths "/index.html"
+
+# Todo lo de /assets lleva hash en el nombre: immutable sin miedo.
+# index.html, sw.js y manifest.webmanifest NO: si se cachean un año, el service
+# worker queda congelado y el deploy siguiente no llega nunca al que ya instaló la app.
+aws s3 sync packages/frontend/dist/ s3://$FE_BUCKET/ --delete   --cache-control "public, max-age=31536000, immutable"   --exclude "index.html" --exclude "sw.js" --exclude "manifest.webmanifest"
+for f in index.html sw.js manifest.webmanifest; do
+  aws s3 cp packages/frontend/dist/$f s3://$FE_BUCKET/$f     --cache-control "no-cache, no-store, must-revalidate"
+done
+MSYS_NO_PATHCONV=1 aws cloudfront create-invalidation --distribution-id $CF_ID   --paths "/index.html" "/sw.js" "/manifest.webmanifest"
 ```
 
 ---

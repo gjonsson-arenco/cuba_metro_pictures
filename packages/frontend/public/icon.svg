@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Metropolitano CUBA 2026">
+  <!-- App icon: the sailboat from metro-logo.svg, flanked by the skyline,
+       sized to survive Android's maskable safe zone (inner 80%). -->
+  <rect width="512" height="512" fill="#0A2A66" />
+
+  <!-- Skyline, kept quiet so the boat reads first at 48px -->
+  <g fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="9" stroke-linejoin="miter">
+    <path d="M104 356 L104 268 L128 244 L152 268 L152 356 Z" />
+    <path d="M360 356 L360 268 L384 244 L408 268 L408 356 Z" />
+  </g>
+
+  <!-- Mast + sail -->
+  <g fill="#FFFFFF">
+    <rect x="251" y="112" width="10" height="228" />
+    <path d="M246 132 L246 330 L164 330 Z" />
+  </g>
+
+  <!-- Hull -->
+  <path d="M150 344 Q256 380 362 344 L340 384 Q256 404 172 384 Z" fill="#FFFFFF" />
+</svg>

@@ -8,13 +8,12 @@ export default {
         serif: ['"Playfair Display"', 'Georgia', 'serif']
       },
       colors: {
-        // CUBA institutional palette (Club Universitario de Buenos Aires)
+        // CUBA institutional palette (Club Universitario de Buenos Aires).
+        // No gold: the club's colours are navy and white.
         cuba: {
           navy: '#0A2A66',       // primary
           'navy-dark': '#061F4D', // hover
           'navy-light': '#1E4A94',
-          gold: '#C8A24D',       // nautical brass
-          'gold-dark': '#a4832d',
           red: '#B01B2E',        // regatta accent
           cream: '#F5EFE0',      // subtle bg
           sand: '#EEE6D3'
