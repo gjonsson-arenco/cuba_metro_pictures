@@ -84,9 +84,29 @@ done
 # ── preflight ─────────────────────────────────────────────────────────────
 step "Preflight"
 
-for bin in aws sam pnpm node; do
+for bin in aws pnpm node; do
   command -v "$bin" >/dev/null 2>&1 || die "falta '$bin' en el PATH"
 done
+
+# SAM en Windows viene como `sam.cmd`, y Git Bash resuelve nombres sin extensión
+# probando .exe/.com pero no .cmd — de ahí el wrapper en ~/bin/sam. Ese wrapper
+# es una capa más que se puede romper, así que si el .cmd está donde lo deja el
+# instalador, lo llamamos derecho. Se puede forzar con SAM=/ruta/a/sam.
+SAM=${SAM:-}
+if [ -z "$SAM" ]; then
+  if [ -f "/c/Program Files/Amazon/AWSSAMCLI/bin/sam.cmd" ]; then
+    SAM="/c/Program Files/Amazon/AWSSAMCLI/bin/sam.cmd"
+  elif command -v sam >/dev/null 2>&1; then
+    SAM=sam
+  else
+    die "no encuentro sam. Instalalo, o pasá SAM=/ruta/a/sam.cmd"
+  fi
+fi
+
+# Que un SAM roto se note acá y no después de tres minutos de build. `deploy
+# --help` no toca nada y recorre el mismo camino que el deploy real.
+"$SAM" deploy --help >/dev/null 2>&1 \
+  || die "'$SAM' no responde. Probá '\"$SAM\" --version' a mano; si dice \"C:\\Program\" no se reconoce, el wrapper está mal armado"
 
 aws sts get-caller-identity --region "$REGION" >/dev/null 2>&1 \
   || die "las credenciales de AWS no funcionan: revisá 'aws configure' o lo que tengas exportado en la sesión"
@@ -197,7 +217,7 @@ if [ "$DO_BACKEND" = 1 ]; then
     || die "processPhoto no dejó sharp como external: tiene que venir del layer"
   ok "artefactos"
 
-  sam validate --lint --template packages/infra/template.yaml --region "$REGION"
+  "$SAM" validate --lint --template packages/infra/template.yaml --region "$REGION"
   ok "template"
 
   if [ "$DRY_RUN" = 1 ]; then
@@ -205,7 +225,8 @@ if [ "$DO_BACKEND" = 1 ]; then
   else
     # Los parámetros van explícitos: samconfig.toml está gitignoreado y no
     # existe en CI, y SAM sin valor para SharpLayerArn falla el update.
-    sam deploy \
+    info "sam deploy → $STACK ($REGION)"
+    if ! "$SAM" deploy \
       --template packages/infra/template.yaml \
       --stack-name "$STACK" \
       --region "$REGION" \
@@ -217,6 +238,9 @@ if [ "$DO_BACKEND" = 1 ]; then
         Environment=prod \
         "AdminEmail=$ADMIN_EMAIL" \
         "SharpLayerArn=$SHARP_LAYER"
+    then
+      die "sam deploy falló — mirá el error de arriba. El stack no queda a medias: CloudFormation aplica el changeset entero o nada, así que podés corregir y volver a correr."
+    fi
     ok "backend desplegado"
   fi
 fi
