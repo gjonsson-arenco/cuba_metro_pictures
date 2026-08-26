@@ -121,7 +121,11 @@ fi
 aws sts get-caller-identity --region "$REGION" >/dev/null 2>&1 \
   || die "las credenciales de AWS no funcionan: revisá 'aws configure' o lo que tengas exportado en la sesión"
 
-ACCOUNT=$(aws sts get-caller-identity --region "$REGION" --query Account --output text)
+# `tr -d '\r'`: el CLI de AWS en Windows escribe CRLF, y ese \r se queda pegado
+# al final de cada valor. Con `$(...)` sobrevive (sólo se recortan los \n), y
+# después rompe de formas ilegibles: un bucket "nombre\r" no matchea el regex de
+# S3, y el \r del mensaje de error pisa el principio de la línea al imprimirse.
+ACCOUNT=$(aws sts get-caller-identity --region "$REGION" --query Account --output text | tr -d '\r')
 info "cuenta   $ACCOUNT"
 info "región   $REGION"
 info "stack    $STACK"
@@ -175,7 +179,7 @@ while IFS=$'\t' read -r key value; do
     FrontendBucketName)       FE_BUCKET=$value ;;
   esac
 done < <(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \
-           --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output text)
+           --query "Stacks[0].Outputs[].[OutputKey,OutputValue]" --output text | tr -d '\r')
 
 SHARP_LAYER=''; ADMIN_EMAIL=''
 while IFS=$'\t' read -r key value; do
@@ -184,7 +188,7 @@ while IFS=$'\t' read -r key value; do
     AdminEmail)    ADMIN_EMAIL=$value ;;
   esac
 done < <(aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK" \
-           --query "Stacks[0].Parameters[].[ParameterKey,ParameterValue]" --output text)
+           --query "Stacks[0].Parameters[].[ParameterKey,ParameterValue]" --output text | tr -d '\r')
 
 for var in API_URL CF_URL CF_ID POOL_ID CLIENT_ID FE_BUCKET SHARP_LAYER ADMIN_EMAIL; do
   [ -n "${!var}" ] || die "el stack no devolvió $var"
