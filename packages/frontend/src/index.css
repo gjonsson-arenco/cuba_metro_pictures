@@ -3,6 +3,16 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* Instalada en iOS, el status bar es `black-translucent`: la página arranca
+       DEBAJO del reloj y la señal, no después. Sin compensarlo, el encabezado
+       queda tapado. Fuera de la app instalada estos valores son 0. */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    /* h-20 del encabezado + lo que se coma el status bar. Lo usa la barra de
+       filtros para pegarse justo abajo y no meterse atrás. */
+    --header-h: calc(5rem + var(--safe-top));
+  }
   html {
     -webkit-font-smoothing: antialiased;
   }

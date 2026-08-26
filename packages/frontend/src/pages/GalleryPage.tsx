@@ -281,7 +281,10 @@ export default function GalleryPage() {
       </div>
 
       {(allTags.length > 0 || true) && (
-        <div className="sticky top-20 z-20 mb-6 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-cuba-cream/95 backdrop-blur">
+        <div
+          className="sticky z-20 mb-6 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-2 bg-cuba-cream/95 backdrop-blur"
+          style={{ top: 'var(--header-h)' }}
+        >
           <div className="card p-3 sm:p-4">
             {filtersCollapsed ? (
               <div className="flex items-center gap-3">
@@ -456,7 +459,10 @@ export default function GalleryPage() {
 
       {/* Floating selection toolbar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white rounded-full shadow-2xl px-4 py-3 flex items-center gap-3 z-40">
+        <div
+          className="fixed left-1/2 -translate-x-1/2 bg-gray-900 text-white rounded-full shadow-2xl px-4 py-3 flex items-center gap-3 z-40"
+          style={{ bottom: 'calc(1.5rem + var(--safe-bottom))' }}
+        >
           <span className="text-sm font-medium">
             {selectedIds.size} seleccionada{selectedIds.size !== 1 ? 's' : ''}
           </span>
