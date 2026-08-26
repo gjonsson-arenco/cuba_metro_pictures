@@ -13,8 +13,14 @@ Globals:
         DYNAMODB_TABLE: !Ref PhotosTable
         S3_RAW_BUCKET: !Sub "metro-photos-raw-${Environment}-${AWS::AccountId}"
         S3_PROCESSED_BUCKET: !Ref ProcessedBucket
-        CLOUDFRONT_URL: !Sub "https://${CloudFrontDistribution.DomainName}"
-        ALLOWED_ORIGIN: !Sub "https://${CloudFrontDistribution.DomainName}"
+        CLOUDFRONT_URL: !If
+          - IsProd
+          - "https://metrocuba.org"
+          - !Sub "https://${CloudFrontDistribution.DomainName}"
+        ALLOWED_ORIGIN: !If
+          - IsProd
+          - "https://metrocuba.org"
+          - !Sub "https://${CloudFrontDistribution.DomainName}"
         COGNITO_USER_POOL_ID: !Ref UserPool
         COGNITO_CLIENT_ID: !Ref UserPoolClient
         AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1"
@@ -33,6 +39,11 @@ Parameters:
   SharpLayerArn:
     Type: String
     Description: Full ARN (including version) of the Sharp Lambda layer
+
+Conditions:
+  # metrocuba.org sólo puede colgar de una distribución: CloudFront rechaza un
+  # alias repetido. Un stack dev/staging se queda con el dominio de CloudFront.
+  IsProd: !Equals [!Ref Environment, prod]
 
 Resources:
   # ============================================================
@@ -172,6 +183,19 @@ Resources:
         Enabled: true
         Comment: !Sub "Metro Photos CDN (${Environment})"
         DefaultRootObject: index.html
+        Aliases: !If
+          - IsProd
+          - ["metrocuba.org"]
+          - !Ref "AWS::NoValue"
+        # El certificado tiene que estar en us-east-1: CloudFront no lee de
+        # ninguna otra región. Sin este bloque usa el suyo, que es lo correcto
+        # cuando no hay dominio propio.
+        ViewerCertificate: !If
+          - IsProd
+          - AcmCertificateArn: !Sub "arn:aws:acm:us-east-1:${AWS::AccountId}:certificate/f1faed16-6a73-4d25-a8de-f2f025ffd2b2"
+            SslSupportMethod: sni-only
+            MinimumProtocolVersion: TLSv1.2_2021
+          - !Ref "AWS::NoValue"
         Origins:
           - Id: FrontendOrigin
             DomainName: !GetAtt FrontendBucket.RegionalDomainName
@@ -275,8 +299,13 @@ Resources:
     Properties:
       StageName: !Ref Environment
       CorsConfiguration:
-        AllowOrigins:
-          - !Sub "https://${CloudFrontDistribution.DomainName}"
+        # Los dos a propósito: el de CloudFront sigue sirviendo el sitio y es la
+        # salida de emergencia si hay que volver atrás con el dominio.
+        AllowOrigins: !If
+          - IsProd
+          - - "https://metrocuba.org"
+            - !Sub "https://${CloudFrontDistribution.DomainName}"
+          - - !Sub "https://${CloudFrontDistribution.DomainName}"
         AllowHeaders: [Content-Type, Authorization]
         AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
         MaxAge: 600
@@ -653,6 +682,13 @@ Outputs:
     Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
     Export:
       Name: !Sub "${AWS::StackName}-ApiUrl"
+
+  SiteUrl:
+    Description: URL pública del sitio
+    Value: !If
+      - IsProd
+      - "https://metrocuba.org"
+      - !Sub "https://${CloudFrontDistribution.DomainName}"
 
   CloudFrontUrl:
     Description: CloudFront distribution URL

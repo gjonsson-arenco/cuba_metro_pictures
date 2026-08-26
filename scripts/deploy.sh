@@ -168,10 +168,11 @@ fi
 # ── outputs del stack ─────────────────────────────────────────────────────
 step "Leyendo el stack"
 
-API_URL=''; CF_URL=''; CF_ID=''; POOL_ID=''; CLIENT_ID=''; FE_BUCKET=''
+API_URL=''; CF_URL=''; CF_ID=''; POOL_ID=''; CLIENT_ID=''; FE_BUCKET=''; SITE_URL=''
 while IFS=$'\t' read -r key value; do
   case "$key" in
     ApiUrl)                   API_URL=$value ;;
+    SiteUrl)                  SITE_URL=$value ;;
     CloudFrontUrl)            CF_URL=$value ;;
     CloudFrontDistributionId) CF_ID=$value ;;
     UserPoolId)               POOL_ID=$value ;;
@@ -194,7 +195,12 @@ for var in API_URL CF_URL CF_ID POOL_ID CLIENT_ID FE_BUCKET SHARP_LAYER ADMIN_EM
   [ -n "${!var}" ] || die "el stack no devolvió $var"
 done
 
+# El output SiteUrl es nuevo: mientras el stack no lo tenga, el sitio sigue
+# siendo el dominio de CloudFront.
+SITE_URL=${SITE_URL:-$CF_URL}
+
 info "api      $API_URL"
+info "sitio    $SITE_URL"
 info "cdn      $CF_URL"
 info "bucket   $FE_BUCKET"
 info "layer    $SHARP_LAYER"
@@ -363,12 +369,12 @@ check_body() { # nombre, url, patrón que tiene que aparecer
 check "galería pública"        200 "$API_URL/photos?limit=1"
 check "settings públicos"      200 "$API_URL/settings"
 check "upload sin token → 401" 401 "$API_URL/upload/presigned" -X POST
-check "SPA"                    200 "$CF_URL/"
-check "deep link SPA"          200 "$CF_URL/admin"
+check "SPA"                    200 "$SITE_URL/"
+check "deep link SPA"          200 "$SITE_URL/admin"
 
 if [ "$DO_FRONTEND" = 1 ]; then
-  check_body "manifest"       "$CF_URL/manifest.webmanifest" '"start_url"'
-  check_body "service worker" "$CF_URL/sw.js"                'metro-'
+  check_body "manifest"       "$SITE_URL/manifest.webmanifest" '"start_url"'
+  check_body "service worker" "$SITE_URL/sw.js"                'metro-'
 fi
 
 if [ "$mismatches" -gt 0 ]; then
@@ -377,8 +383,8 @@ fi
 
 if [ "$unreachable" -gt 0 ]; then
   warn "$unreachable chequeo(s) no obtuvieron respuesta desde esta máquina (proxy, DNS o TLS)."
-  warn "El deploy ya se aplicó: abrí $CF_URL en el browser antes de dar nada por roto."
+  warn "El deploy ya se aplicó: abrí $SITE_URL en el browser antes de dar nada por roto."
 fi
 
-printf '\n%s✓ Deploy completo%s  %s\n' "$GREEN" "$OFF" "$CF_URL"
+printf '\n%s✓ Deploy completo%s  %s\n' "$GREEN" "$OFF" "$SITE_URL"
 printf '%s  La invalidación de CloudFront tarda ~1-2 min en propagar.%s\n' "$DIM" "$OFF"
