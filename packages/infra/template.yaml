@@ -301,11 +301,16 @@ Resources:
       CorsConfiguration:
         # Los dos a propósito: el de CloudFront sigue sirviendo el sitio y es la
         # salida de emergencia si hay que volver atrás con el dominio.
-        AllowOrigins: !If
-          - IsProd
-          - - "https://metrocuba.org"
-            - !Sub "https://${CloudFrontDistribution.DomainName}"
-          - - !Sub "https://${CloudFrontDistribution.DomainName}"
+        #
+        # OJO: lista plana, sin !If. La transformación de SAM no soporta
+        # intrínsecas acá: convierte CorsConfiguration en la extensión
+        # `x-amazon-apigateway-cors` del OpenAPI, y con un Fn::If de por medio
+        # escupe el intrínseco crudo en lugar del objeto, perdiendo allowOrigins,
+        # allowHeaders, allowMethods y maxAge. No falla el deploy — el stack
+        # queda UPDATE_COMPLETE y la API se queda con el CORS viejo, en silencio.
+        AllowOrigins:
+          - "https://metrocuba.org"
+          - !Sub "https://${CloudFrontDistribution.DomainName}"
         AllowHeaders: [Content-Type, Authorization]
         AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
         MaxAge: 600
