@@ -88,25 +88,35 @@ for bin in aws pnpm node; do
   command -v "$bin" >/dev/null 2>&1 || die "falta '$bin' en el PATH"
 done
 
-# SAM en Windows viene como `sam.cmd`, y Git Bash resuelve nombres sin extensión
-# probando .exe/.com pero no .cmd — de ahí el wrapper en ~/bin/sam. Ese wrapper
-# es una capa más que se puede romper, así que si el .cmd está donde lo deja el
-# instalador, lo llamamos derecho. Se puede forzar con SAM=/ruta/a/sam.
-SAM=${SAM:-}
-if [ -z "$SAM" ]; then
-  if [ -f "/c/Program Files/Amazon/AWSSAMCLI/bin/sam.cmd" ]; then
-    SAM="/c/Program Files/Amazon/AWSSAMCLI/bin/sam.cmd"
-  elif command -v sam >/dev/null 2>&1; then
-    SAM=sam
-  else
-    die "no encuentro sam. Instalalo, o pasá SAM=/ruta/a/sam.cmd"
-  fi
+# SAM en Windows se instala como `sam.cmd`, un batch de una línea:
+#
+#     "%~dp0/../runtime/python.exe" -m samcli %*
+#
+# Ejecutarlo desde Git Bash obliga a pasar por cmd.exe, y ahí el path del
+# instalador — que tiene un espacio, "C:\Program Files\..." — se rompe en
+# algunos comandos: `validate` sale bien y `deploy` muere con
+# «"C:\Program" no se reconoce como un comando interno o externo».
+#
+# Le hablamos directo al python embebido: es un .exe nativo, Git Bash lo lanza
+# sin intermediarios y desaparece toda esa clase de problema.
+SAM_HOME=${SAM_HOME:-/c/Program Files/Amazon/AWSSAMCLI}
+SAM_CMD=()
+if [ -n "${SAM:-}" ]; then
+  SAM_CMD=("$SAM")
+elif [ -x "$SAM_HOME/runtime/python.exe" ]; then
+  SAM_CMD=("$SAM_HOME/runtime/python.exe" -m samcli)
+elif command -v sam >/dev/null 2>&1; then
+  SAM_CMD=(sam)
+elif [ -f "$SAM_HOME/bin/sam.cmd" ]; then
+  SAM_CMD=("$SAM_HOME/bin/sam.cmd")
+else
+  die "no encuentro SAM. Pasá SAM_HOME=/ruta/a/AWSSAMCLI o SAM=/ruta/a/sam"
 fi
 
 # Que un SAM roto se note acá y no después de tres minutos de build. `deploy
 # --help` no toca nada y recorre el mismo camino que el deploy real.
-"$SAM" deploy --help >/dev/null 2>&1 \
-  || die "'$SAM' no responde. Probá '\"$SAM\" --version' a mano; si dice \"C:\\Program\" no se reconoce, el wrapper está mal armado"
+"${SAM_CMD[@]}" deploy --help >/dev/null 2>&1 \
+  || die "SAM no responde: ${SAM_CMD[*]}"
 
 aws sts get-caller-identity --region "$REGION" >/dev/null 2>&1 \
   || die "las credenciales de AWS no funcionan: revisá 'aws configure' o lo que tengas exportado en la sesión"
@@ -217,7 +227,7 @@ if [ "$DO_BACKEND" = 1 ]; then
     || die "processPhoto no dejó sharp como external: tiene que venir del layer"
   ok "artefactos"
 
-  "$SAM" validate --lint --template packages/infra/template.yaml --region "$REGION"
+  "${SAM_CMD[@]}" validate --lint --template packages/infra/template.yaml --region "$REGION"
   ok "template"
 
   if [ "$DRY_RUN" = 1 ]; then
@@ -226,7 +236,7 @@ if [ "$DO_BACKEND" = 1 ]; then
     # Los parámetros van explícitos: samconfig.toml está gitignoreado y no
     # existe en CI, y SAM sin valor para SharpLayerArn falla el update.
     info "sam deploy → $STACK ($REGION)"
-    if ! "$SAM" deploy \
+    if ! "${SAM_CMD[@]}" deploy \
       --template packages/infra/template.yaml \
       --stack-name "$STACK" \
       --region "$REGION" \

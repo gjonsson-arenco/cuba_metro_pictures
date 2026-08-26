@@ -154,7 +154,7 @@ where.exe sam                 # ¿dónde quedó?
 sam.cmd --version             # ¿responde así?
 ```
 
-Si responde, es sólo resolución de nombre. Wrapper que funciona también dentro de scripts:
+Si responde, es sólo resolución de nombre. Un wrapper alcanza para el uso interactivo:
 
 ```bash
 mkdir -p ~/bin
@@ -168,6 +168,22 @@ export PATH="$HOME/bin:$PATH"
 
 sam --version
 ```
+
+> ⚠️ **Pero el wrapper no es confiable para `sam deploy`.** `sam.cmd` es un batch de una sola
+> línea —`"%~dp0/../runtime/python.exe" -m samcli %*`— y llamarlo desde Git Bash obliga a pasar
+> por cmd.exe. Con el instalador en `C:\Program Files\...` (con espacio), algunos comandos
+> sobreviven y otros no: `sam validate` anda y `sam deploy` muere con
+> **`"C:\Program" no se reconoce como un comando interno o externo`**, antes de imprimir nada
+> y sin llegar a CloudFormation.
+>
+> La salida es hablarle directo al Python embebido, que es un `.exe` nativo y no necesita cmd.exe:
+>
+> ```bash
+> "/c/Program Files/Amazon/AWSSAMCLI/runtime/python.exe" -m samcli deploy ...
+> ```
+>
+> `scripts/deploy.sh` ya resuelve SAM así. Se puede apuntar a otra instalación con
+> `SAM_HOME=/ruta/a/AWSSAMCLI`.
 
 ### Rutas y Git Bash
 
