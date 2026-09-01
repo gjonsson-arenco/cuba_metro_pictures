@@ -65,7 +65,10 @@ function FilterGroup({
   children: ReactNode;
 }) {
   return (
-    <div className={`flex items-center gap-2 ${grow ? 'flex-1 min-w-[240px]' : 'shrink-0'} ${wrap ? 'flex-wrap' : 'flex-nowrap'}`}>
+    // `wrap={false}` vale de `sm` para arriba: en el teléfono el grupo es más
+    // ancho que la pantalla, y sin envolver se desborda de la tarjeta y se
+    // mete debajo de lo que haya a la derecha.
+    <div className={`flex items-center gap-2 ${grow ? 'flex-1 min-w-[240px]' : 'min-w-0 sm:shrink-0'} ${wrap ? 'flex-wrap' : 'flex-wrap sm:flex-nowrap'}`}>
       <div className="flex items-center gap-2 mr-1 shrink-0">
         <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-cuba-navy/60">
           {label}
@@ -324,7 +327,7 @@ export default function GalleryPage() {
               <div className="flex items-center gap-3">
                 <button
                   onClick={toggleFilters}
-                  className="text-xs font-semibold uppercase tracking-[0.15em] text-cuba-navy hover:text-cuba-navy-dark inline-flex items-center gap-1.5"
+                  className="text-xs font-semibold uppercase tracking-[0.15em] text-cuba-navy hover:text-cuba-navy-dark inline-flex items-center gap-1.5 shrink-0 whitespace-nowrap"
                 >
                   <span aria-hidden>▾</span> Filtros
                 </button>
@@ -419,17 +422,14 @@ export default function GalleryPage() {
                       })}
                     </FilterGroup>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0 mt-1">
-                    {countBadge}
-                    <button
-                      onClick={toggleFilters}
-                      className="text-xs font-semibold uppercase tracking-[0.15em] text-cuba-navy/60 hover:text-cuba-navy"
-                      aria-label="Colapsar filtros"
-                      title="Colapsar filtros"
-                    >
-                      ▴
-                    </button>
-                  </div>
+                  <button
+                    onClick={toggleFilters}
+                    className="text-xs font-semibold uppercase tracking-[0.15em] text-cuba-navy/60 hover:text-cuba-navy shrink-0 mt-1"
+                    aria-label="Colapsar filtros"
+                    title="Colapsar filtros"
+                  >
+                    ▴
+                  </button>
                 </div>
 
                 {/* Tags row — its own line */}
@@ -450,6 +450,10 @@ export default function GalleryPage() {
                     ))}
                   </FilterGroup>
                 )}
+
+                {/* Renglón propio: en la fila de arriba competía por el ancho
+                    con los filtros y en el teléfono terminaban encimados. */}
+                {countBadge && <div className="flex justify-end">{countBadge}</div>}
               </div>
             )}
           </div>
