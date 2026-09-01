@@ -75,6 +75,13 @@ export default function Lightbox({
   const [busy, setBusy] = useState<null | 'download' | 'rotate-cw' | 'rotate-ccw' | 'delete' | 'meta'>(null);
   /** Fullscreen only: tapping the photo hides everything but the photo. */
   const [chromeVisible, setChromeVisible] = useState(true);
+  /**
+   * Fullscreen only: descargar, rotar, eliminar y el editor viven en un panel
+   * plegado. La pantalla del teléfono es toda foto, y esa botonera fija le
+   * comía el cuarto de abajo. Queda entre fotos: quien está etiquetando una
+   * serie no lo quiere volver a abrir en cada una.
+   */
+  const [panelOpen, setPanelOpen] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [animating, setAnimating] = useState(false);
 
@@ -217,43 +224,57 @@ export default function Lightbox({
 
   // ── Shared pieces ──────────────────────────────────────────────────────
 
-  const hasChips = !!(photo.sailingClass || photo.day || photo.tags.length);
+  /**
+   * En el teléfono va sólo el logo: el nombre de la clase no dice nada que el
+   * logo no diga, y la chapita entera tapa foto.
+   */
+  const classChip = photo.sailingClass ? (
+    <span
+      className={`inline-flex items-center gap-2 text-white text-xs px-3 rounded-full ${
+        TOUCH ? 'bg-black/60 backdrop-blur py-1.5' : 'bg-white/10 py-1'
+      }`}
+      title={SAILING_CLASS_LABELS[photo.sailingClass]}
+    >
+      <img
+        src={`/classes/${photo.sailingClass}.svg`}
+        alt={SAILING_CLASS_LABELS[photo.sailingClass]}
+        className="h-3.5 w-auto"
+        style={{ filter: 'brightness(0) invert(1)' }}
+      />
+      {!TOUCH && SAILING_CLASS_LABELS[photo.sailingClass]}
+    </span>
+  ) : null;
+
+  const dayChip = photo.day ? (
+    <span className={`bg-white text-cuba-navy text-xs font-semibold px-3 rounded-full ${TOUCH ? 'py-1.5' : 'py-1'}`}>
+      {REGATTA_DAY_LABELS[photo.day]}
+    </span>
+  ) : null;
+
+  const tagChips = photo.tags.length ? photo.tags.map(tag => (
+    <span key={tag} className="inline-flex items-center gap-1 bg-white/15 text-white text-xs px-2 py-1 rounded-full">
+      {tag}
+      {canEdit && onMetadata && (
+        <button
+          type="button"
+          disabled={busy !== null}
+          onClick={() => removeTag(tag)}
+          aria-label={`Quitar ${tag}`}
+          title={`Quitar ${tag}`}
+          className="text-white/60 hover:text-white text-sm leading-none disabled:opacity-50"
+        >
+          ×
+        </button>
+      )}
+    </span>
+  )) : null;
+
+  const hasChips = !!(classChip || dayChip || tagChips);
   const metadataChips = hasChips ? (
     <div className="flex flex-wrap items-center justify-center gap-2">
-      {photo.sailingClass && (
-        <span className="inline-flex items-center gap-2 bg-white/10 text-white text-xs px-3 py-1 rounded-full">
-          <img
-            src={`/classes/${photo.sailingClass}.svg`}
-            alt=""
-            aria-hidden
-            className="h-3.5 w-auto"
-            style={{ filter: 'brightness(0) invert(1)' }}
-          />
-          {SAILING_CLASS_LABELS[photo.sailingClass]}
-        </span>
-      )}
-      {photo.day && (
-        <span className="bg-white text-cuba-navy text-xs font-semibold px-3 py-1 rounded-full">
-          {REGATTA_DAY_LABELS[photo.day]}
-        </span>
-      )}
-      {photo.tags.map(tag => (
-        <span key={tag} className="inline-flex items-center gap-1 bg-white/15 text-white text-xs px-2 py-1 rounded-full">
-          {tag}
-          {canEdit && onMetadata && (
-            <button
-              type="button"
-              disabled={busy !== null}
-              onClick={() => removeTag(tag)}
-              aria-label={`Quitar ${tag}`}
-              title={`Quitar ${tag}`}
-              className="text-white/60 hover:text-white text-sm leading-none disabled:opacity-50"
-            >
-              ×
-            </button>
-          )}
-        </span>
-      ))}
+      {classChip}
+      {dayChip}
+      {tagChips}
     </div>
   ) : null;
 
@@ -355,6 +376,9 @@ export default function Lightbox({
     </div>
   ) : null;
 
+  /** Lo que en el teléfono vive detrás del botón de desplegar. */
+  const hasPanel = !!(actionBar || metadataEditor || tagChips);
+
   // ── Fullscreen viewer (touch) ──────────────────────────────────────────
 
   if (TOUCH) {
@@ -428,14 +452,40 @@ export default function Lightbox({
             </button>
           )}
 
-          {(metadataChips || actionBar || metadataEditor) && (
+          {(classChip || dayChip || hasPanel) && (
             <div
-              className={`${chromeVisible ? 'pointer-events-auto' : ''} absolute inset-x-0 bottom-0 flex flex-col items-center gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pt-12 max-h-[55vh] overflow-y-auto`}
+              className={`${chromeVisible ? 'pointer-events-auto' : ''} absolute inset-x-0 bottom-0 flex flex-col gap-3 bg-gradient-to-t from-black/80 to-transparent px-4 pt-12`}
               style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 1rem)' }}
             >
-              {metadataChips}
-              {actionBar}
-              {metadataEditor}
+              {panelOpen && hasPanel && (
+                <div className="flex flex-col items-center gap-3 w-full max-h-[45vh] overflow-y-auto">
+                  {tagChips && (
+                    <div className="flex flex-wrap items-center justify-center gap-2">{tagChips}</div>
+                  )}
+                  {actionBar}
+                  {metadataEditor}
+                </div>
+              )}
+              {/* Clase y día quedan siempre a la vista: son una línea, y son
+                  lo que uno mira sin tener que abrir nada. */}
+              <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 flex-1 min-w-0">
+                  {classChip}
+                  {dayChip}
+                </div>
+                {hasPanel && (
+                  <button
+                    type="button"
+                    onClick={() => setPanelOpen(o => !o)}
+                    aria-expanded={panelOpen}
+                    aria-label={panelOpen ? 'Ocultar acciones' : 'Mostrar acciones'}
+                    title={panelOpen ? 'Ocultar acciones' : 'Mostrar acciones'}
+                    className="shrink-0 w-11 h-11 flex items-center justify-center rounded-full bg-black/50 text-white text-xl leading-none"
+                  >
+                    <span aria-hidden>{panelOpen ? '⌄' : '⋯'}</span>
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </Chrome>

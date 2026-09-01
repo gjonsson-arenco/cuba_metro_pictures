@@ -38,7 +38,12 @@ export interface ListPhotosRequest {
 
 export interface ListPhotosResponse {
   photos: Photo[];
-  total: number;
+  /**
+   * Cuántas fotos pasan el filtro en total, no cuántas trae esta página.
+   * Sólo viene en la primera página (la que no manda `lastKey`): contarlas
+   * cuesta un scan entero, y el número no cambia mientras se pagina.
+   */
+  total?: number;
   hasMore: boolean;
   lastKey?: string;
 }

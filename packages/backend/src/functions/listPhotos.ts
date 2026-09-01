@@ -64,9 +64,19 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
 
     const photos: Photo[] = items.slice(0, limit).map(item => mapToPhoto(item));
 
+    // Sólo en la primera página: el total no cambia mientras se pagina, y
+    // contarlo cuesta recorrer la tabla entera.
+    const total = lastKey === undefined
+      ? await countMatching({
+          FilterExpression: filterParts.join(' AND '),
+          ExpressionAttributeValues: expressionValues,
+          ExpressionAttributeNames: day ? { '#d': 'day' } : undefined
+        })
+      : undefined;
+
     const response: ListPhotosResponse = {
       photos,
-      total: photos.length,
+      total,
       hasMore: newLastKey !== undefined,
       lastKey: newLastKey ? encodeURIComponent(JSON.stringify(newLastKey)) : undefined
     };
@@ -77,6 +87,32 @@ export const handler = async (event: APIGatewayProxyEvent): Promise<APIGatewayPr
     return internalError();
   }
 };
+
+/**
+ * Cuántas fotos pasan el filtro. `Select: 'COUNT'` no devuelve los ítems, así
+ * que el scan cuesta la lectura de la tabla pero no el ancho de banda; el
+ * filtro se aplica igual, y hay que seguir las páginas hasta el final porque
+ * DynamoDB corta el scan por bytes leídos, no por resultados.
+ */
+async function countMatching(scan: {
+  FilterExpression: string;
+  ExpressionAttributeValues: Record<string, unknown>;
+  ExpressionAttributeNames?: Record<string, string>;
+}): Promise<number> {
+  let total = 0;
+  let startKey: Record<string, unknown> | undefined;
+  do {
+    const page = await dynamoDB.send(new ScanCommand({
+      TableName: TABLE_NAME,
+      Select: 'COUNT',
+      ...scan,
+      ExclusiveStartKey: startKey
+    }));
+    total += page.Count ?? 0;
+    startKey = page.LastEvaluatedKey as Record<string, unknown> | undefined;
+  } while (startKey);
+  return total;
+}
 
 function mapToPhoto(item: Record<string, unknown>): Photo {
   const photoId = item.photoId as string;

@@ -27,6 +27,13 @@ import InstallPrompt from '../components/InstallPrompt';
 
 const PAGE_SIZE = 24;
 
+/**
+ * Cuántas fotos de colchón deja el visor antes de pedir la página siguiente.
+ * Mirando una por una se avanza mucho más lento que lo que tarda una página,
+ * así que con este margen nunca se llega al borde de lo cargado.
+ */
+const LIGHTBOX_PREFETCH = 6;
+
 /** On a phone the originals go through the share sheet, not to Archivos. */
 const SHARE_MODE = canSharePhotos();
 
@@ -90,6 +97,8 @@ export default function GalleryPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [lastKey, setLastKey] = useState<string | undefined>();
+  /** Cuántas fotos hay con los filtros puestos, no cuántas se cargaron. */
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<{ done: number; total: number } | null>(null);
   const [publicDownloads, setPublicDownloads] = useState(false);
   const [filtersCollapsed, setFiltersCollapsed] = useState(false);
@@ -149,6 +158,8 @@ export default function GalleryPage() {
       setPhotos(prev => reset ? result.photos : [...prev, ...result.photos]);
       setHasMore(result.hasMore);
       setLastKey(result.lastKey);
+      // El total sólo viene en la primera página; después vale el guardado.
+      if (result.total !== undefined) setTotalCount(result.total);
       setAllTags(prev => {
         const tagSet = new Set<string>(prev);
         result.photos.forEach(p => p.tags.forEach(t => tagSet.add(t)));
@@ -177,6 +188,14 @@ export default function GalleryPage() {
     if (sentinelRef.current) observerRef.current.observe(sentinelRef.current);
     return () => observerRef.current?.disconnect();
   }, [hasMore, isLoading, loadPhotos]);
+
+  // El visor de a una foto avanza más allá de lo scrolleado: al acercarse al
+  // final de lo cargado pide la página siguiente, igual que el centinela de la
+  // grilla — que con el visor abierto no ve nada, porque el body no scrollea.
+  useEffect(() => {
+    if (lightboxIndex === null || !hasMore || isLoading) return;
+    if (lightboxIndex >= photos.length - LIGHTBOX_PREFETCH) loadPhotos(false);
+  }, [lightboxIndex, hasMore, isLoading, photos.length, loadPhotos]);
 
   function toggleTag(tag: string) {
     setSelectedTags(prev =>
@@ -236,6 +255,7 @@ export default function GalleryPage() {
     try {
       await apiDelete(photoId);
       setPhotos(prev => prev.filter(p => p.photoId !== photoId));
+      setTotalCount(prev => (prev === null ? prev : Math.max(prev - 1, 0)));
       setSelectedIds(prev => {
         const next = new Set(prev);
         next.delete(photoId);
@@ -270,6 +290,20 @@ export default function GalleryPage() {
   }
 
   const currentLightboxPhoto = lightboxIndex !== null ? photos[lightboxIndex] : null;
+
+  const hasFilters = !!selectedClass || !!selectedDay || selectedTags.length > 0;
+  // Cuenta lo que hay del otro lado del filtro, no lo que se alcanzó a
+  // scrollear: es la respuesta a "¿cuántas fotos hay de mi clase?".
+  const countLabel = totalCount === null
+    ? null
+    : `${totalCount} ${totalCount === 1 ? 'foto' : 'fotos'}${
+        hasFilters ? (totalCount === 1 ? ' filtrada' : ' filtradas') : ''
+      }`;
+  const countBadge = countLabel ? (
+    <span className="text-[11px] font-semibold text-cuba-navy/70 tabular-nums whitespace-nowrap shrink-0">
+      {countLabel}
+    </span>
+  ) : null;
 
   return (
     <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 pb-32">
@@ -321,6 +355,7 @@ export default function GalleryPage() {
                     <span className="text-xs text-cuba-navy/50">Sin filtros activos</span>
                   )}
                 </div>
+                {countBadge}
               </div>
             ) : (
               <div className="space-y-3">
@@ -384,14 +419,17 @@ export default function GalleryPage() {
                       })}
                     </FilterGroup>
                   </div>
-                  <button
-                    onClick={toggleFilters}
-                    className="text-xs font-semibold uppercase tracking-[0.15em] text-cuba-navy/60 hover:text-cuba-navy shrink-0 mt-1"
-                    aria-label="Colapsar filtros"
-                    title="Colapsar filtros"
-                  >
-                    ▴
-                  </button>
+                  <div className="flex items-center gap-3 shrink-0 mt-1">
+                    {countBadge}
+                    <button
+                      onClick={toggleFilters}
+                      className="text-xs font-semibold uppercase tracking-[0.15em] text-cuba-navy/60 hover:text-cuba-navy"
+                      aria-label="Colapsar filtros"
+                      title="Colapsar filtros"
+                    >
+                      ▴
+                    </button>
+                  </div>
                 </div>
 
                 {/* Tags row — its own line */}
@@ -442,12 +480,12 @@ export default function GalleryPage() {
           prevPhoto={lightboxIndex !== null ? photos[lightboxIndex - 1] : undefined}
           nextPhoto={lightboxIndex !== null ? photos[lightboxIndex + 1] : undefined}
           index={lightboxIndex !== null ? lightboxIndex + 1 : undefined}
-          total={photos.length}
+          total={totalCount ?? photos.length}
           onClose={() => setLightboxIndex(null)}
           onPrev={() => setLightboxIndex(i => (i !== null && i > 0 ? i - 1 : i))}
           onNext={() => setLightboxIndex(i => (i !== null && i < photos.length - 1 ? i + 1 : i))}
           hasPrev={lightboxIndex !== null && lightboxIndex > 0}
-          hasNext={lightboxIndex !== null && lightboxIndex < photos.length - 1}
+          hasNext={lightboxIndex !== null && (lightboxIndex < photos.length - 1 || hasMore)}
           canEdit={canManagePhotos}
           shareMode={SHARE_MODE}
           onDownload={canDownload ? handleSingleDownload : undefined}
